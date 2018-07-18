@@ -7,8 +7,8 @@ import (
 	"runtime"
 )
 
-// A conn represents the server side of an qrpc connection.
-type conn struct {
+// A serveconn represents the server side of an qrpc connection.
+type serveconn struct {
 	// server is the server on which the connection arrived.
 	// Immutable; never nil.
 	server *Server
@@ -35,51 +35,51 @@ type conn struct {
 var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
 // GetServer returns the server
-func (c *conn) GetServer() *Server {
-	return c.server
+func (sc *serveconn) GetServer() *Server {
+	return sc.server
 }
 
 // Serve a new connection.
-func (c *conn) serve(ctx context.Context, idx int) {
+func (sc *serveconn) serve(ctx context.Context, idx int) {
 
 	defer func() {
 		if err := recover(); err != nil {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			c.server.logf("http: panic serving %v: %v\n%s", c.rwc.RemoteAddr().String(), err, buf)
+			sc.server.logf("http: panic serving %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
 		}
-		c.close()
+		sc.close()
 	}()
 
 	ctx, cancelCtx := context.WithCancel(ctx)
-	c.cancelCtx = cancelCtx
-	c.ctx = ctx
+	sc.cancelCtx = cancelCtx
+	sc.ctx = ctx
 	defer cancelCtx()
 
-	c.reader = newFrameReader(ctx, c.rwc, c.server.bindings[idx].DefaultReadTimeout)
-	c.writer = NewFrameWriter(ctx, c.writeFrameCh) // only used by blocking mode
+	sc.reader = newFrameReader(ctx, sc.rwc, sc.server.bindings[idx].DefaultReadTimeout)
+	sc.writer = NewFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
-	go c.readFrames()
-	go c.writeFrames(c.server.bindings[idx].DefaultWriteTimeout)
+	go sc.readFrames()
+	go sc.writeFrames(sc.server.bindings[idx].DefaultWriteTimeout)
 
-	handler := c.server.bindings[idx].Handler
+	handler := sc.server.bindings[idx].Handler
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case res := <-c.readFrameCh:
+		case res := <-sc.readFrameCh:
 			if res.f.ctx != nil {
 				panic("res.f.ctx is not nil")
 			}
 			res.f.ctx = ctx
 			if res.f.Flags&NBFlag == 0 {
-				handler.ServeQRPC(c.writer, res.f)
+				handler.ServeQRPC(sc.writer, res.f)
 				res.readMore()
 			} else {
 				res.readMore()
-				go handler.ServeQRPC(c.GetWriter(), res.f)
+				go handler.ServeQRPC(sc.GetWriter(), res.f)
 			}
 		}
 
@@ -88,9 +88,9 @@ func (c *conn) serve(ctx context.Context, idx int) {
 }
 
 // GetWriter generate a FrameWriter for the connection
-func (c *conn) GetWriter() FrameWriter {
+func (sc *serveconn) GetWriter() FrameWriter {
 
-	return NewFrameWriter(c.ctx, c.writeFrameCh)
+	return NewFrameWriter(sc.ctx, sc.writeFrameCh)
 }
 
 // ErrInvalidPacket when packet invalid
@@ -115,7 +115,7 @@ type gate chan struct{}
 
 func (g gate) Done() { g <- struct{}{} }
 
-func (c *conn) readFrames() (err error) {
+func (c *serveconn) readFrames() (err error) {
 
 	ctx := c.ctx
 	defer func() {
@@ -146,7 +146,7 @@ func (c *conn) readFrames() (err error) {
 
 }
 
-func (c *conn) writeFrames(timeout int) (err error) {
+func (c *serveconn) writeFrames(timeout int) (err error) {
 
 	ctx := c.ctx
 	writer := NewWriterWithTimeout(c.rwc, timeout)
@@ -165,12 +165,12 @@ func (c *conn) writeFrames(timeout int) (err error) {
 }
 
 // Close the connection.
-func (c *conn) close() {
+func (c *serveconn) close() {
 	c.finalFlush()
 	c.rwc.Close()
 	c.cancelCtx()
 }
 
 // return to pool
-func (c *conn) finalFlush() {
+func (c *serveconn) finalFlush() {
 }

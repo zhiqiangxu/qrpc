@@ -154,7 +154,7 @@ func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Resp
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
-	writer := NewFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+	writer := conn.GetWriter()
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()

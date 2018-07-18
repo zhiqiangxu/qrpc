@@ -187,8 +187,8 @@ func (srv *Server) trackListener(ln net.Listener, add bool) {
 }
 
 // Create new connection from rwc.
-func (srv *Server) newConn(rwc net.Conn) *conn {
-	c := &conn{
+func (srv *Server) newConn(rwc net.Conn) *serveconn {
+	c := &serveconn{
 		server:       srv,
 		rwc:          rwc,
 		readFrameCh:  make(chan readFrameResult),
@@ -233,7 +233,7 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 
 // PushFrame pushes a frame to specified connection
 // it is thread safe
-func (srv *Server) PushFrame(conn *conn, cmd Cmd, flags PacketFlag, payload []byte) error {
+func (srv *Server) PushFrame(conn *serveconn, cmd Cmd, flags PacketFlag, payload []byte) error {
 
 	pushID := atomic.AddUint64(&srv.pushID, 1)
 	flags &= PushFlag
