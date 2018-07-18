@@ -43,12 +43,12 @@ func NewServeMux() *ServeMux { return new(ServeMux) }
 
 // HandleFunc registers the handler function for the given pattern.
 func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *Frame)) {
-	mux.Handle(cmd, HandlerFunc(handler))
+	mux.handle(cmd, HandlerFunc(handler))
 }
 
-// Handle registers the handler for the given pattern.
-// If a handler already exists for pattern, Handle panics.
-func (mux *ServeMux) Handle(cmd Cmd, handler Handler) {
+// handle registers the handler for the given pattern.
+// If a handler already exists for pattern, handle panics.
+func (mux *ServeMux) handle(cmd Cmd, handler Handler) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 

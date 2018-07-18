@@ -2,6 +2,10 @@ package qrpc
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
+	"errors"
+	"math"
 	"net"
 	"sync"
 )
@@ -14,15 +18,16 @@ type Client struct {
 }
 
 // Connection defines a qrpc connection
-// it is not thread safe, because writer is not
+// it is not thread safe, because writer,resp is not
 type Connection struct {
 	net.Conn
-	reader       *defaultFrameReader
-	writer       FrameWriter
-	p            *sync.Pool
-	conf         ConnectionConfig
-	writeFrameCh chan writeFrameRequest // written by FrameWriter
-	subscriber   SubFunc                // there can be only one subscriber because of streamed frames
+	reader     *defaultFrameReader
+	writer     *Writer
+	p          *sync.Pool
+	conf       ConnectionConfig
+	subscriber SubFunc // there can be only one subscriber because of streamed frames
+	mu         sync.Mutex
+	respes     sync.Map // map[uint64]*response
 }
 
 // NewClient creates a Client instance
@@ -46,12 +51,11 @@ func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f S
 		conf.Ctx = context.Background()
 	}
 
-	c := &Connection{Conn: conn, conf: conf, writeFrameCh: make(chan writeFrameRequest), subscriber: f}
+	c := &Connection{Conn: conn, conf: conf, subscriber: f}
 	c.reader = newFrameReader(conf.Ctx, conn, conf.ReadTimeout)
-	c.writer = NewFrameWriter(conf.Ctx, c.writeFrameCh)
+	c.writer = NewWriterWithTimeout(conn, conf.WriteTimeout)
 
 	go c.readFrames()
-	go c.writeFrames()
 
 	return c, nil
 }
@@ -78,13 +82,90 @@ func (cli *Client) GetConn(addr string, f func(*Frame)) *Connection {
 	}
 	cli.mu.Unlock()
 
-	return p.Get().(*Connection)
+	conn, ok := p.Get().(*Connection)
+	if !ok {
+		return nil
+	}
+	conn.subscriber = f
+	return conn
 }
 
-// Request send a request frame and returns response frame
-func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (*Frame, error) {
+// Response for response frames
+type Response interface {
+	GetFrame() *Frame
+}
 
-	return nil, nil
+type response struct {
+	Frame chan *Frame
+}
+
+func (r *response) GetFrame() *Frame {
+	frame := <-r.Frame
+	return frame
+}
+
+func (r *response) SetResponse(frame *Frame) {
+	r.Frame <- frame
+}
+
+var (
+	// ErrNoNewUUID when no new uuid available
+	ErrNoNewUUID = errors.New("no new uuid available temporary")
+)
+
+// Request send a request frame and returns response frame
+// error is non nil when write failed
+func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Response, error) {
+
+	var (
+		requestID uint64
+		suc       bool
+	)
+	for i := 0; i < 3; i++ {
+		requestID = PoorManUUID()
+		_, ok := conn.respes.Load(requestID)
+		if !ok {
+			suc = true
+			break
+		}
+	}
+	if !suc {
+		return nil, ErrNoNewUUID
+	}
+
+	resp := &response{Frame: make(chan *Frame)}
+	conn.respes.Store(requestID, resp)
+
+	packet := MakePacket(requestID, cmd, flags, payload)
+	_, err := conn.writer.Write(packet)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+// MakePacket generate packet
+func MakePacket(requestID uint64, cmd Cmd, flags PacketFlag, payload []byte) []byte {
+	length := 12 + uint32(len(payload))
+	buf := make([]byte, 4+length)
+	binary.BigEndian.PutUint32(buf, length)
+	binary.BigEndian.PutUint64(buf[4:], requestID)
+	cmdAndFlags := uint32(cmd&0xffffff) + uint32(flags)<<24
+	binary.BigEndian.PutUint32(buf[12:], uint32(cmdAndFlags))
+	copy(buf[16:], payload)
+	return buf
+}
+
+// PoorManUUID generate a uint64 uuid
+func PoorManUUID() (result uint64) {
+	buf := make([]byte, 8)
+	rand.Read(buf)
+	result = binary.LittleEndian.Uint64(buf)
+	if result == 0 {
+		result = math.MaxUint64
+	}
+	return
 }
 
 // Close internally returns the connection to pool
@@ -119,6 +200,14 @@ func (conn *Connection) readFrames() {
 		}
 
 		// deal with pulled frames
+		resp, ok := conn.respes.Load(frame.RequestID)
+		if !ok {
+			//log error
+			continue
+		}
+		resp.(*response).SetResponse(frame)
+		conn.respes.Delete(frame.RequestID)
+
 	}
 }
 
@@ -128,7 +217,4 @@ func (conn *Connection) Subscribe(f func(*Frame)) {
 		panic("only one subscriber allowed")
 	}
 	conn.subscriber = f
-}
-func (conn *Connection) writeFrames() {
-
 }
