@@ -15,6 +15,8 @@ type conn struct {
 
 	// cancelCtx cancels the connection-level context.
 	cancelCtx context.CancelFunc
+	// ctx is the corresponding context for cancelCtx
+	ctx context.Context
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
@@ -32,6 +34,11 @@ type conn struct {
 // used to store custom information
 var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
+// GetServer returns the server
+func (c *conn) GetServer() *Server {
+	return c.server
+}
+
 // Serve a new connection.
 func (c *conn) serve(ctx context.Context, idx int) {
 
@@ -47,13 +54,14 @@ func (c *conn) serve(ctx context.Context, idx int) {
 
 	ctx, cancelCtx := context.WithCancel(ctx)
 	c.cancelCtx = cancelCtx
+	c.ctx = ctx
 	defer cancelCtx()
 
 	c.reader = newFrameReader(ctx, c.rwc, c.server.bindings[idx].DefaultReadTimeout)
-	c.writer = NewFrameWriter(ctx, c.writeFrameCh)
+	c.writer = NewFrameWriter(ctx, c.writeFrameCh) // only used by blocking mode
 
-	go c.readFrames(ctx)
-	go c.writeFrames(ctx, c.server.bindings[idx].DefaultWriteTimeout)
+	go c.readFrames()
+	go c.writeFrames(c.server.bindings[idx].DefaultWriteTimeout)
 
 	handler := c.server.bindings[idx].Handler
 
@@ -71,12 +79,18 @@ func (c *conn) serve(ctx context.Context, idx int) {
 				res.readMore()
 			} else {
 				res.readMore()
-				go handler.ServeQRPC(c.writer, res.f)
+				go handler.ServeQRPC(c.GetWriter(), res.f)
 			}
 		}
 
 	}
 
+}
+
+// GetWriter generate a FrameWriter for the connection
+func (c *conn) GetWriter() FrameWriter {
+
+	return NewFrameWriter(c.ctx, c.writeFrameCh)
 }
 
 // ErrInvalidPacket when packet invalid
@@ -101,8 +115,9 @@ type gate chan struct{}
 
 func (g gate) Done() { g <- struct{}{} }
 
-func (c *conn) readFrames(ctx context.Context) (err error) {
+func (c *conn) readFrames() (err error) {
 
+	ctx := c.ctx
 	defer func() {
 		if err != nil {
 			c.close()
@@ -131,8 +146,9 @@ func (c *conn) readFrames(ctx context.Context) (err error) {
 
 }
 
-func (c *conn) writeFrames(ctx context.Context, timeout int) (err error) {
+func (c *conn) writeFrames(timeout int) (err error) {
 
+	ctx := c.ctx
 	writer := NewWriterWithTimeout(c.rwc, timeout)
 	for {
 		select {

@@ -12,7 +12,7 @@ const (
 )
 
 // TestConnection tests connection
-func TestConnection(t *testing.T) {
+func TestHelloWorld(t *testing.T) {
 
 	go startServer()
 	time.Sleep(time.Second * 2)
@@ -35,6 +35,31 @@ func TestConnection(t *testing.T) {
 	fmt.Println("resp is ", string(frame.Payload))
 }
 
+func TestWriter(t *testing.T) {
+
+	go startServer()
+	time.Sleep(time.Second * 2)
+
+	conf := qrpc.ConnectionConfig{WriteTimeout: 2}
+	cli := qrpc.NewClient(conf)
+
+	conn := cli.GetConn(addr, func(frame *qrpc.Frame) {
+		fmt.Println(frame)
+	})
+
+	w := conn.GetWriter()
+	for i := 0; ; i++ {
+		fmt.Println(i)
+		w.StartWrite(uint64(i), HelloCmd, qrpc.NBFlag)
+		w.WriteBytes([]byte("TestWriter"))
+		err := w.EndWrite()
+		if err != nil {
+			panic(err)
+		}
+	}
+
+}
+
 const (
 	HelloCmd qrpc.Cmd = iota
 	HelloRespCmd
@@ -43,6 +68,7 @@ const (
 func startServer() {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.Frame) {
+		// time.Sleep(time.Hour)
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
 		writer.WriteBytes(append([]byte("hello world "), request.Payload...))

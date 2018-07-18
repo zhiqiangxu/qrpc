@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -88,6 +89,8 @@ type Server struct {
 	doneChan  chan struct{}
 
 	activeConn []sync.Map // for better iterate when write, map[conn]*ConnectionInfo
+
+	pushID uint64
 }
 
 // NewServer creates a server
@@ -226,6 +229,19 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+// PushFrame pushes a frame to specified connection
+// it is thread safe
+func (srv *Server) PushFrame(conn *conn, cmd Cmd, flags PacketFlag, payload []byte) error {
+
+	pushID := atomic.AddUint64(&srv.pushID, 1)
+	flags &= PushFlag
+	w := conn.GetWriter()
+	w.StartWrite(pushID, cmd, flags)
+	w.WriteBytes(payload)
+	return w.EndWrite()
+
 }
 
 func (srv *Server) waitConnDone() bool {

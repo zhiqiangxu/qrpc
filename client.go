@@ -18,16 +18,19 @@ type Client struct {
 }
 
 // Connection defines a qrpc connection
-// it is not thread safe, because writer,resp is not
+// it is thread safe
 type Connection struct {
+	// immutable
 	net.Conn
 	reader     *defaultFrameReader
-	writer     *Writer
 	p          *sync.Pool
 	conf       ConnectionConfig
 	subscriber SubFunc // there can be only one subscriber because of streamed frames
-	mu         sync.Mutex
-	respes     sync.Map // map[uint64]*response
+
+	writeFrameCh chan writeFrameRequest
+
+	mu     sync.Mutex
+	respes map[uint64]*response
 }
 
 // NewClient creates a Client instance
@@ -51,11 +54,13 @@ func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f S
 		conf.Ctx = context.Background()
 	}
 
-	c := &Connection{Conn: conn, conf: conf, subscriber: f}
+	c := &Connection{
+		Conn: conn, conf: conf, subscriber: f,
+		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response)}
 	c.reader = newFrameReader(conf.Ctx, conn, conf.ReadTimeout)
-	c.writer = NewWriterWithTimeout(conn, conf.WriteTimeout)
 
 	go c.readFrames()
+	go c.writeFrames()
 
 	return c, nil
 }
@@ -108,10 +113,19 @@ func (r *response) SetResponse(frame *Frame) {
 	r.Frame <- frame
 }
 
+func (r *response) Close() {
+	close(r.Frame)
+}
+
 var (
 	// ErrNoNewUUID when no new uuid available
 	ErrNoNewUUID = errors.New("no new uuid available temporary")
 )
+
+// GetWriter return a FrameWriter
+func (conn *Connection) GetWriter() FrameWriter {
+	return NewFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+}
 
 // Request send a request frame and returns response frame
 // error is non nil when write failed
@@ -121,44 +135,42 @@ func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Resp
 		requestID uint64
 		suc       bool
 	)
+
+	conn.mu.Lock()
 	for i := 0; i < 3; i++ {
-		requestID = PoorManUUID()
-		_, ok := conn.respes.Load(requestID)
+		requestID = poorManUUID()
+		_, ok := conn.respes[requestID]
 		if !ok {
 			suc = true
 			break
 		}
 	}
 	if !suc {
+		conn.mu.Unlock()
 		return nil, ErrNoNewUUID
 	}
 
 	resp := &response{Frame: make(chan *Frame)}
-	conn.respes.Store(requestID, resp)
+	conn.respes[requestID] = resp
+	conn.mu.Unlock()
 
-	packet := MakePacket(requestID, cmd, flags, payload)
-	_, err := conn.writer.Write(packet)
+	writer := NewFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+	writer.StartWrite(requestID, cmd, flags)
+	writer.WriteBytes(payload)
+	err := writer.EndWrite()
+
 	if err != nil {
+		conn.mu.Lock()
+		delete(conn.respes, requestID)
+		conn.mu.Unlock()
 		return nil, err
 	}
 
 	return resp, nil
 }
 
-// MakePacket generate packet
-func MakePacket(requestID uint64, cmd Cmd, flags PacketFlag, payload []byte) []byte {
-	length := 12 + uint32(len(payload))
-	buf := make([]byte, 4+length)
-	binary.BigEndian.PutUint32(buf, length)
-	binary.BigEndian.PutUint64(buf[4:], requestID)
-	cmdAndFlags := uint32(cmd&0xffffff) + uint32(flags)<<24
-	binary.BigEndian.PutUint32(buf[12:], uint32(cmdAndFlags))
-	copy(buf[16:], payload)
-	return buf
-}
-
-// PoorManUUID generate a uint64 uuid
-func PoorManUUID() (result uint64) {
+// poorManUUID generate a uint64 uuid
+func poorManUUID() (result uint64) {
 	buf := make([]byte, 8)
 	rand.Read(buf)
 	result = binary.LittleEndian.Uint64(buf)
@@ -168,8 +180,25 @@ func PoorManUUID() (result uint64) {
 	return
 }
 
+// ErrConnAlreadyClosed when try to close an already closed conn
+var ErrConnAlreadyClosed = errors.New("close an already closed conn")
+
 // Close internally returns the connection to pool
 func (conn *Connection) Close() error {
+
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
+	if conn.subscriber == nil {
+		return ErrConnAlreadyClosed
+	}
+
+	conn.subscriber = nil
+	for _, v := range conn.respes {
+		v.Close()
+	}
+
+	conn.respes = make(map[uint64]*response)
 	if conn.p != nil {
 		conn.p.Put(conn)
 		return nil
@@ -200,21 +229,39 @@ func (conn *Connection) readFrames() {
 		}
 
 		// deal with pulled frames
-		resp, ok := conn.respes.Load(frame.RequestID)
+		conn.mu.Lock()
+		resp, ok := conn.respes[frame.RequestID]
 		if !ok {
 			//log error
+			conn.mu.Unlock()
 			continue
 		}
-		resp.(*response).SetResponse(frame)
-		conn.respes.Delete(frame.RequestID)
+		delete(conn.respes, frame.RequestID)
+		conn.mu.Unlock()
+
+		resp.SetResponse(frame)
 
 	}
 }
 
-// Subscribe register f as callback for pushed message
-func (conn *Connection) Subscribe(f func(*Frame)) {
-	if conn.subscriber != nil {
-		panic("only one subscriber allowed")
+func (conn *Connection) writeFrames() (err error) {
+
+	defer func() {
+		if err != nil {
+			conn.Close()
+		}
+	}()
+	writer := NewWriterWithTimeout(conn.Conn, conn.conf.WriteTimeout)
+	for {
+		select {
+		case res := <-conn.writeFrameCh:
+			_, err = writer.Write(res.frame)
+			res.result <- err
+			if err != nil {
+				return
+			}
+		case <-conn.conf.Ctx.Done():
+			return nil
+		}
 	}
-	conn.subscriber = f
 }
