@@ -24,7 +24,7 @@ func TestConnection(t *testing.T) {
 		fmt.Println(frame)
 	})
 
-	resp, err := conn.Request(HelloCmd, 0, []byte("xu"))
+	resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
 	if err != nil {
 		panic(err)
 	}
