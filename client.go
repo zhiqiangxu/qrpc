@@ -236,8 +236,8 @@ func poorManUUID() (result uint64) {
 // ErrConnAlreadyClosed when try to close an already closed conn
 var ErrConnAlreadyClosed = errors.New("close an already closed conn")
 
-// Close internally returns the connection to pool
-func (conn *Connection) Close() error {
+// Close internally returns the connection to pool if not fatal
+func (conn *Connection) Close(fatal bool) error {
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -252,7 +252,7 @@ func (conn *Connection) Close() error {
 	}
 
 	conn.respes = make(map[uint64]*response)
-	if conn.p != nil {
+	if conn.p != nil && !fatal {
 		conn.p.Put(conn)
 		return nil
 	}
@@ -263,11 +263,16 @@ func (conn *Connection) Close() error {
 var requestID uint64
 
 func (conn *Connection) readFrames() {
+	var (
+		err   error
+		frame *Frame
+		fatal bool
+	)
 	defer func() {
-		conn.Close()
+		conn.Close(fatal)
 	}()
 	for {
-		frame, err := conn.reader.ReadFrame()
+		frame, fatal, err = conn.reader.ReadFrame()
 		if err != nil {
 			return
 		}
@@ -297,24 +302,22 @@ func (conn *Connection) readFrames() {
 	}
 }
 
-func (conn *Connection) writeFrames() (err error) {
+func (conn *Connection) writeFrames() (fatal bool) {
 
 	defer func() {
-		if err != nil {
-			conn.Close()
-		}
+		conn.Close(fatal)
 	}()
 	writer := NewWriterWithTimeout(conn.Conn, conn.conf.WriteTimeout)
 	for {
 		select {
 		case res := <-conn.writeFrameCh:
-			_, err = writer.Write(res.frame)
+			_, err := writer.Write(res.frame)
 			res.result <- err
 			if err != nil {
-				return
+				return true
 			}
 		case <-conn.conf.Ctx.Done():
-			return nil
+			return false
 		}
 	}
 }

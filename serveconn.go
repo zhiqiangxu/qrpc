@@ -127,7 +127,7 @@ func (c *serveconn) readFrames() (err error) {
 	gateDone := gate.Done
 
 	for {
-		req, err := c.reader.ReadFrame()
+		req, _, err := c.reader.ReadFrame()
 		if err != nil {
 			return err
 		}
