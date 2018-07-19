@@ -83,12 +83,12 @@ type Server struct {
 	// one handler for each listening address
 	bindings []ServerBinding
 
-	// manages below two
-	mu        sync.Mutex
-	listeners map[net.Listener]struct{}
-	doneChan  chan struct{}
-
-	activeConn []sync.Map // for better iterate when write, map[conn]*ConnectionInfo
+	// manages below
+	mu         sync.Mutex
+	listeners  map[net.Listener]struct{}
+	doneChan   chan struct{}
+	id2Conn    []map[string]*serveconn
+	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
 
 	pushID uint64
 }
@@ -99,6 +99,7 @@ func NewServer(bindings []ServerBinding) *Server {
 		bindings:   bindings,
 		listeners:  make(map[net.Listener]struct{}),
 		doneChan:   make(chan struct{}),
+		id2Conn:    make([]map[string]*serveconn, len(bindings)),
 		activeConn: make([]sync.Map, len(bindings))}
 }
 
@@ -112,7 +113,7 @@ func (srv *Server) ListenAndServe() error {
 			return err
 		}
 
-		go srv.serve(ln, idx)
+		go srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
 
 	}
 
@@ -131,7 +132,7 @@ var defaultAcceptTimeout = 5 * time.Second
 //
 // serve always returns a non-nil error. After Shutdown or Close, the
 // returned error is ErrServerClosed.
-func (srv *Server) serve(l net.Listener, idx int) error {
+func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 
 	defer l.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
@@ -142,8 +143,8 @@ func (srv *Server) serve(l net.Listener, idx int) error {
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	for {
-		l.(*net.TCPListener).SetDeadline(time.Now().Add(defaultAcceptTimeout))
-		rw, e := l.Accept()
+		l.SetDeadline(time.Now().Add(defaultAcceptTimeout))
+		rw, e := l.AcceptTCP()
 		if e != nil {
 			select {
 			case <-srv.doneChan:
@@ -170,10 +171,26 @@ func (srv *Server) serve(l net.Listener, idx int) error {
 			return e
 		}
 		tempDelay = 0
-		c := srv.newConn(rw)
+		c := srv.newConn(rw, idx)
 
-		go c.serve(serveCtx, idx)
+		go c.serve(serveCtx)
 	}
+}
+
+// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
+// connections.
+type tcpKeepAliveListener struct {
+	*net.TCPListener
+}
+
+func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
+	tc, err := ln.AcceptTCP()
+	if err != nil {
+		return nil, err
+	}
+	tc.SetKeepAlive(true)
+	tc.SetKeepAlivePeriod(3 * time.Minute)
+	return tc, nil
 }
 
 func (srv *Server) trackListener(ln net.Listener, add bool) {
@@ -187,13 +204,48 @@ func (srv *Server) trackListener(ln net.Listener, add bool) {
 }
 
 // Create new connection from rwc.
-func (srv *Server) newConn(rwc net.Conn) *serveconn {
+func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 	c := &serveconn{
 		server:       srv,
 		rwc:          rwc,
+		idx:          idx,
+		closeCh:      make(chan struct{}),
 		readFrameCh:  make(chan readFrameResult),
 		writeFrameCh: make(chan writeFrameRequest)}
+
+	srv.activeConn[idx].Store(c, struct{}{})
 	return c
+}
+
+// bindID bind the id to sc
+func (srv *Server) bindID(sc *serveconn, id string) {
+
+	idx := sc.idx
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v, ok := srv.id2Conn[idx][id]
+	if ok {
+		if v == sc {
+			return
+		}
+		ch, _ := v.Close()
+		<-ch
+	}
+
+	srv.id2Conn[idx][id] = sc
+}
+
+func (srv *Server) untrack(sc *serveconn) {
+
+	idx := sc.idx
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	if sc.id != "" {
+		delete(srv.id2Conn[idx], sc.id)
+	}
+	srv.activeConn[idx].Delete(sc)
+
 }
 
 func (srv *Server) logf(format string, args ...interface{}) {
