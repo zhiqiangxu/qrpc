@@ -12,8 +12,8 @@ type defaultFrameWriter struct {
 	ctx     context.Context
 }
 
-// NewFrameWriter creates a FrameWriter instance to write frames
-func NewFrameWriter(ctx context.Context, writeCh chan<- writeFrameRequest) FrameWriter {
+// newFrameWriter creates a FrameWriter instance to write frames
+func newFrameWriter(ctx context.Context, writeCh chan<- writeFrameRequest) *defaultFrameWriter {
 	return &defaultFrameWriter{writeCh: writeCh, ctx: ctx}
 }
 
@@ -62,6 +62,13 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 	case <-dfw.ctx.Done():
 		return dfw.ctx.Err()
 	}
+}
+
+func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
+	if end {
+		dfw.wbuf[12] &= byte(StreamEndFlag)
+	}
+	return dfw.EndWrite()
 }
 
 // WriteUint64 write uint64 to wbuf

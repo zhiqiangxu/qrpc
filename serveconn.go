@@ -58,7 +58,7 @@ func (sc *serveconn) serve(ctx context.Context, idx int) {
 	defer cancelCtx()
 
 	sc.reader = newFrameReader(ctx, sc.rwc, sc.server.bindings[idx].DefaultReadTimeout)
-	sc.writer = NewFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
+	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
 	go sc.readFrames()
 	go sc.writeFrames(sc.server.bindings[idx].DefaultWriteTimeout)
@@ -90,7 +90,7 @@ func (sc *serveconn) serve(ctx context.Context, idx int) {
 // GetWriter generate a FrameWriter for the connection
 func (sc *serveconn) GetWriter() FrameWriter {
 
-	return NewFrameWriter(sc.ctx, sc.writeFrameCh)
+	return newFrameWriter(sc.ctx, sc.writeFrameCh)
 }
 
 // ErrInvalidPacket when packet invalid

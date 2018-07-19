@@ -124,37 +124,90 @@ var (
 
 // GetWriter return a FrameWriter
 func (conn *Connection) GetWriter() FrameWriter {
-	return NewFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+	return newFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+}
+
+// StreamWriter is returned by StreamRequest
+type StreamWriter interface {
+	StartWrite()
+	WriteBytes(v []byte)     // v is copied in WriteBytes
+	EndWrite(end bool) error // block until scheduled
+}
+
+type defaultStreamWriter struct {
+	w         *defaultFrameWriter
+	requestID uint64
+	cmd       Cmd
+	flags     PacketFlag
+}
+
+func newStreamWriter(w *defaultFrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) *defaultStreamWriter {
+	return &defaultStreamWriter{w: w, requestID: requestID, cmd: cmd, flags: flags}
+}
+
+func (dsw *defaultStreamWriter) StartWrite() {
+	dsw.w.StartWrite(dsw.requestID, dsw.cmd, dsw.flags)
+}
+
+func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
+	dsw.w.WriteBytes(v)
+}
+
+func (dsw *defaultStreamWriter) EndWrite(end bool) error {
+	return dsw.w.StreamEndWrite(end)
+}
+
+// StreamRequest is for streamed request
+func (conn *Connection) StreamRequest(cmd Cmd, flags PacketFlag, payload []byte) (Response, StreamWriter, error) {
+
+	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, newStreamWriter(writer, requestID, cmd, flags), nil
 }
 
 // Request send a request frame and returns response frame
 // error is non nil when write failed
 func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Response, error) {
 
+	_, resp, _, err := conn.writeFirstFrame(cmd, flags, payload)
+
+	return resp, err
+}
+
+func (conn *Connection) writeFirstFrame(cmd Cmd, flags PacketFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
 	var (
 		requestID uint64
 		suc       bool
 	)
 
+	requestID = poorManUUID()
 	conn.mu.Lock()
-	for i := 0; i < 3; i++ {
-		requestID = poorManUUID()
+	i := 0
+	for {
 		_, ok := conn.respes[requestID]
 		if !ok {
 			suc = true
 			break
 		}
-	}
-	if !suc {
-		conn.mu.Unlock()
-		return nil, ErrNoNewUUID
+
+		i++
+		if i >= 3 {
+			break
+		}
+		requestID = poorManUUID()
 	}
 
+	if !suc {
+		conn.mu.Unlock()
+		return 0, nil, nil, ErrNoNewUUID
+	}
 	resp := &response{Frame: make(chan *Frame)}
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
-	writer := conn.GetWriter()
+	writer := newFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
@@ -163,10 +216,10 @@ func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Resp
 		conn.mu.Lock()
 		delete(conn.respes, requestID)
 		conn.mu.Unlock()
-		return nil, err
+		return 0, nil, nil, err
 	}
 
-	return resp, nil
+	return requestID, resp, writer, nil
 }
 
 // poorManUUID generate a uint64 uuid
