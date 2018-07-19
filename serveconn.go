@@ -151,24 +151,24 @@ type gate chan struct{}
 
 func (g gate) Done() { g <- struct{}{} }
 
-func (c *serveconn) readFrames() (err error) {
+func (sc *serveconn) readFrames() (err error) {
 
-	ctx := c.ctx
+	ctx := sc.ctx
 	defer func() {
 		if err != nil {
-			c.Close()
+			sc.Close()
 		}
 	}()
 	gate := make(gate)
 	gateDone := gate.Done
 
 	for {
-		req, _, err := c.reader.ReadFrame()
+		req, _, err := sc.reader.ReadFrame()
 		if err != nil {
 			return err
 		}
 		select {
-		case c.readFrameCh <- readFrameResult{f: req, readMore: gateDone}:
+		case sc.readFrameCh <- readFrameResult{f: req, readMore: gateDone}:
 		case <-ctx.Done():
 			return nil
 		}
