@@ -116,3 +116,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	return &Frame{RequestID: requestID, Cmd: cmd, Flags: flags, Payload: payload, ctx: dfr.ctx}, nil
 }
+
+func (dfr *defaultFrameReader) CloseStream(requestID uint64) {
+	delete(dfr.streamFrameCh, requestID)
+}

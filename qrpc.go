@@ -15,6 +15,8 @@ const (
 	NBFlag
 	// CancelFlag cancels a stream (TODO)
 	CancelFlag
+	// ErrorFlag indicate client should close the specific stream
+	ErrorFlag
 	// CompressFlag indicate packet is compressed (TODO)
 	CompressFlag
 	// PushFlag mean the frame is pushed from server

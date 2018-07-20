@@ -24,15 +24,18 @@ func TestHelloWorld(t *testing.T) {
 		fmt.Println(frame)
 	})
 
-	resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-	if err != nil {
-		panic(err)
+	for _, flag := range []qrpc.PacketFlag{0, qrpc.NBFlag} {
+		resp, err := conn.Request(HelloCmd, flag, []byte("xu"))
+		if err != nil {
+			panic(err)
+		}
+		frame := resp.GetFrame()
+		if frame == nil {
+			panic("nil frame")
+		}
+		fmt.Println("resp is ", string(frame.Payload))
 	}
-	frame := resp.GetFrame()
-	if frame == nil {
-		panic("nil frame")
-	}
-	fmt.Println("resp is ", string(frame.Payload))
+
 }
 
 func TestWriter(t *testing.T) {

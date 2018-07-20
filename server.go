@@ -3,7 +3,6 @@ package qrpc
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -71,9 +70,9 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler) {
 // cmd matches the request.
 func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
-	fmt.Println("cmd", r.Cmd)
 	h, ok := mux.m[r.Cmd]
 	if !ok {
+		// TODO error response
 		return
 	}
 	mux.mu.RUnlock()
@@ -117,11 +116,11 @@ func (srv *Server) ListenAndServe() error {
 			return err
 		}
 
-		goFunc(&srv.wg, func(ln net.Listener, idx int) func() {
+		goFunc(&srv.wg, func(idx int) func() {
 			return func() {
 				srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
 			}
-		}(ln, idx))
+		}(idx))
 
 	}
 
@@ -182,11 +181,9 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 		tempDelay = 0
 		c := srv.newConn(rw, idx)
 
-		goFunc(&srv.wg, func(c *serveconn) func() {
-			return func() {
-				c.serve(serveCtx)
-			}
-		}(c))
+		goFunc(&srv.wg, func() {
+			c.serve(serveCtx)
+		})
 	}
 }
 

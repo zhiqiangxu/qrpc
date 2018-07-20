@@ -18,6 +18,7 @@ type serveconn struct {
 	cancelCtx context.CancelFunc
 	// ctx is the corresponding context for cancelCtx
 	ctx context.Context
+	wg  sync.WaitGroup // wait group for goroutines
 
 	idx int
 
@@ -104,22 +105,26 @@ func (sc *serveconn) serve(ctx context.Context) {
 	idx := sc.idx
 
 	defer func() {
+		// connection level panic
 		if err := recover(); err != nil {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			sc.server.logf("http: panic serving %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
+			sc.server.logf("qrpc: panic serving %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
 		}
 		sc.Close()
-		cancelCtx()
 	}()
 
 	binding := sc.server.bindings[idx]
 	sc.reader = newFrameReader(ctx, sc.rwc, binding.DefaultReadTimeout)
 	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
-	go sc.readFrames()
-	go sc.writeFrames(binding.DefaultWriteTimeout)
+	goFunc(&sc.wg, func() {
+		sc.readFrames()
+	})
+	goFunc(&sc.wg, func() {
+		sc.writeFrames(binding.DefaultWriteTimeout)
+	})
 
 	handler := binding.Handler
 
@@ -128,13 +133,46 @@ func (sc *serveconn) serve(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case res := <-sc.readFrameCh:
+
 			if res.f.Flags&NBFlag == 0 {
-				handler.ServeQRPC(sc.writer, (*RequestFrame)(res.f))
+				func() {
+					sc.handleRequestPanic(res.f)
+					handler.ServeQRPC(sc.writer, res.f)
+				}()
 				res.readMore()
 			} else {
 				res.readMore()
-				go handler.ServeQRPC(sc.GetWriter(), (*RequestFrame)(res.f))
+				goFunc(&sc.wg, func() {
+					sc.handleRequestPanic(res.f)
+					handler.ServeQRPC(sc.GetWriter(), res.f)
+					sc.stopReadStream(res.f.RequestID)
+				})
 			}
+		}
+
+	}
+
+}
+
+func (sc *serveconn) stopReadStream(requestID uint64) {
+	sc.reader.CloseStream(requestID)
+}
+
+func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
+	if err := recover(); err != nil {
+		const size = 64 << 10
+		buf := make([]byte, size)
+		buf = buf[:runtime.Stack(buf, false)]
+		sc.server.logf("qrpc: handleRequestPanic %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
+
+		sc.stopReadStream(frame.RequestID)
+		// send error frame
+		writer := sc.GetWriter()
+		writer.StartWrite(frame.RequestID, frame.Cmd, ErrorFlag)
+		err = writer.EndWrite()
+		if err != nil {
+			sc.Close()
+			return
 		}
 
 	}
@@ -168,7 +206,7 @@ func (sc *serveconn) GetWriter() FrameWriter {
 var ErrInvalidPacket = errors.New("invalid packet")
 
 type readFrameResult struct {
-	f *Frame // valid until readMore is called
+	f *RequestFrame // valid until readMore is called
 
 	// readMore should be called once the consumer no longer needs or
 	// retains f. After readMore, f is invalid and more frames can be
@@ -203,7 +241,7 @@ func (sc *serveconn) readFrames() (err error) {
 			return err
 		}
 		select {
-		case sc.readFrameCh <- readFrameResult{f: req, readMore: gateDone}:
+		case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req), readMore: gateDone}:
 		case <-ctx.Done():
 			return nil
 		}
