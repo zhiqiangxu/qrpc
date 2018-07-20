@@ -18,7 +18,7 @@ type defaultFrameReader struct {
 
 // newFrameReader creates a FrameWriter instance to read frames
 func newFrameReader(ctx context.Context, rwc net.Conn, timeout int) *defaultFrameReader {
-	return &defaultFrameReader{Reader: NewReaderWithTimeout(rwc, timeout), ctx: ctx}
+	return &defaultFrameReader{Reader: NewReaderWithTimeout(ctx, rwc, timeout), ctx: ctx}
 }
 
 var (
@@ -28,11 +28,11 @@ var (
 	ErrStreamFrameMustNB = errors.New("streaming frame must be non block")
 )
 
-func (dfr *defaultFrameReader) ReadFrame() (*Frame, bool /*fatal or not,used by client*/, error) {
+func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
 
 	f, err := dfr.readFrame()
 	if err != nil {
-		return f, true, err
+		return f, err
 	}
 
 	requestID := f.RequestID
@@ -40,13 +40,13 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, bool /*fatal or not,used by 
 
 	// done for non streamed frame
 	if flags&StreamFlag == 0 {
-		return f, false, nil
+		return f, nil
 	}
 
 	// deal with streamed frames
 
 	if flags&NBFlag == 0 {
-		return nil, true, ErrStreamFrameMustNB
+		return nil, ErrStreamFrameMustNB
 	}
 
 	if flags&StreamEndFlag == 0 {
@@ -59,7 +59,7 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, bool /*fatal or not,used by 
 			// the first frame for the stream
 			ch = make(chan<- *Frame)
 			dfr.streamFrameCh[requestID] = ch
-			return f, false, nil
+			return f, nil
 		}
 
 		// continuation frame for the stream
@@ -67,18 +67,18 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, bool /*fatal or not,used by 
 		case ch <- f:
 			return dfr.ReadFrame()
 		case <-dfr.ctx.Done():
-			return nil, false, dfr.ctx.Err()
+			return nil, dfr.ctx.Err()
 		}
 	} else {
 		// the ending frame of the stream
 		if dfr.streamFrameCh == nil {
 			// ending frame with no prior stream frames
-			return f, false, nil
+			return f, nil
 		}
 		ch, ok := dfr.streamFrameCh[requestID]
 		if !ok {
 			// ending frame with no prior stream frames
-			return f, false, nil
+			return f, nil
 		}
 		// ending frame for the stream
 		select {
@@ -86,7 +86,7 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, bool /*fatal or not,used by 
 			delete(dfr.streamFrameCh, requestID)
 			return dfr.ReadFrame()
 		case <-dfr.ctx.Done():
-			return nil, false, dfr.ctx.Err()
+			return nil, dfr.ctx.Err()
 		}
 	}
 }

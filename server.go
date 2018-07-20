@@ -17,6 +17,11 @@ type FrameWriter interface {
 	EndWrite() error     // block until scheduled
 }
 
+// Future returns error in future
+type Future interface {
+	Err() error
+}
+
 // A Handler responds to an qrpc request.
 type Handler interface {
 	ServeQRPC(FrameWriter, *RequestFrame)

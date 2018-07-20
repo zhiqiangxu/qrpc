@@ -1,6 +1,7 @@
 package qrpc
 
 import (
+	"context"
 	"encoding/binary"
 	"io"
 	"net"
@@ -11,21 +12,27 @@ import (
 type Reader struct {
 	conn    net.Conn
 	timeout int
+	ctx     context.Context
 }
 
 const (
 	// ReadNoTimeout will never timeout
 	ReadNoTimeout = -1
+	// CtxCheckMaxInterval for check ctx.Done
+	CtxCheckMaxInterval = 3 * time.Second
 )
 
 // NewReader creates a StreamReader instance
-func NewReader(conn net.Conn) *Reader {
-	return NewReaderWithTimeout(conn, ReadNoTimeout)
+func NewReader(ctx context.Context, conn net.Conn) *Reader {
+	return NewReaderWithTimeout(ctx, conn, ReadNoTimeout)
 }
 
 // NewReaderWithTimeout allows specify timeout
-func NewReaderWithTimeout(conn net.Conn, timeout int) *Reader {
-	return &Reader{conn: conn, timeout: timeout}
+func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Reader {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &Reader{ctx: ctx, conn: conn, timeout: timeout}
 }
 
 // SetReadTimeout allows modify timeout for read
@@ -44,16 +51,49 @@ func (r *Reader) ReadUint32() (uint32, error) {
 	return binary.BigEndian.Uint32(bytes), nil
 }
 
-// ReadBytes read bytes
-func (r *Reader) ReadBytes(bytes []byte) error {
+// ReadBytes read bytes honouring CtxCheckMaxInterval
+func (r *Reader) ReadBytes(bytes []byte) (err error) {
+	var (
+		endTime     time.Time
+		readTimeout time.Duration
+		offset      int
+		n           int
+	)
 	timeout := r.timeout
 	if timeout > 0 {
-		r.conn.SetReadDeadline(time.Now().Add(time.Duration(timeout) * time.Second))
-	}
-	_, err := io.ReadFull(r.conn, bytes)
-	if err != nil {
-		return err
+		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
 	}
 
-	return nil
+	for {
+
+		if timeout > 0 {
+			readTimeout = endTime.Sub(time.Now())
+			if readTimeout > CtxCheckMaxInterval {
+				readTimeout = CtxCheckMaxInterval
+			}
+		} else {
+			readTimeout = CtxCheckMaxInterval
+		}
+
+		r.conn.SetReadDeadline(time.Now().Add(readTimeout))
+		n, err = io.ReadFull(r.conn, bytes[offset:])
+		if err != nil {
+			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {
+				if time.Now().After(endTime) {
+					return err
+				}
+			} else {
+				return err
+			}
+			offset += n
+		}
+
+		select {
+		case <-r.ctx.Done():
+			return r.ctx.Err()
+		default:
+		}
+		return nil
+	}
+
 }

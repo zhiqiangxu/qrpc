@@ -188,7 +188,7 @@ func (sc *serveconn) readFrames() (err error) {
 	gateDone := gate.Done
 
 	for {
-		req, _, err := sc.reader.ReadFrame()
+		req, err := sc.reader.ReadFrame()
 		if err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func (sc *serveconn) readFrames() (err error) {
 func (sc *serveconn) writeFrames(timeout int) (err error) {
 
 	ctx := sc.ctx
-	writer := NewWriterWithTimeout(sc.rwc, timeout)
+	writer := NewWriterWithTimeout(ctx, sc.rwc, timeout)
 	for {
 		select {
 		case res := <-sc.writeFrameCh:
