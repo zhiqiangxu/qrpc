@@ -63,6 +63,7 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 	if timeout > 0 {
 		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
 	}
+	size := len(bytes)
 
 	for {
 
@@ -77,6 +78,7 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 
 		r.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		n, err = io.ReadFull(r.conn, bytes[offset:])
+		offset += n
 		if err != nil {
 			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {
 				if time.Now().After(endTime) {
@@ -85,7 +87,9 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 			} else {
 				return err
 			}
-			offset += n
+		}
+		if offset >= size {
+			return nil
 		}
 
 		select {
@@ -93,7 +97,6 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 			return r.ctx.Err()
 		default:
 		}
-		return nil
 	}
 
 }

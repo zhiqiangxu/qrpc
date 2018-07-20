@@ -77,9 +77,19 @@ func (ci *ConnectionInfo) Load(anything interface{}) interface{} {
 	return ci.anything
 }
 
-// GetServer returns the server
-func (sc *serveconn) GetServer() *Server {
+// Server returns the server
+func (sc *serveconn) Server() *Server {
 	return sc.server
+}
+
+// ReaderConfig for change timeout
+type ReaderConfig interface {
+	SetReadTimeout(timeout int)
+}
+
+// Reader returns the ReaderConfig
+func (sc *serveconn) Reader() ReaderConfig {
+	return sc.reader
 }
 
 // Serve a new connection.
@@ -228,13 +238,18 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 // Close the connection.
 func (sc *serveconn) Close() (<-chan struct{}, error) {
 
+	return sc.closeLocked(false)
+
+}
+
+func (sc *serveconn) closeLocked(serverLocked bool) (<-chan struct{}, error) {
 	err := sc.rwc.Close()
 	if err != nil {
 		return sc.closeCh, err
 	}
 	sc.cancelCtx()
 
-	sc.server.untrack(sc)
+	sc.server.untrack(sc, serverLocked)
 	close(sc.closeCh)
 
 	return sc.closeCh, nil

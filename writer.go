@@ -66,7 +66,6 @@ func (w *Writer) Write(bytes []byte) (int, error) {
 			} else {
 				return offset, err
 			}
-			offset += n
 		}
 		if offset >= size {
 			return offset, nil

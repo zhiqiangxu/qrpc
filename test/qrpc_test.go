@@ -71,6 +71,7 @@ func startServer() {
 		// time.Sleep(time.Hour)
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
+		fmt.Println("in server handle")
 		writer.WriteBytes(append([]byte("hello world "), request.Payload...))
 		err := writer.EndWrite()
 		if err != nil {
@@ -80,5 +81,8 @@ func startServer() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	server.ListenAndServe()
+	err := server.ListenAndServe()
+	if err != nil {
+		panic(err)
+	}
 }

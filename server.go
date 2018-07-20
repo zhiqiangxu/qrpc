@@ -3,6 +3,7 @@ package qrpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -44,20 +45,20 @@ func NewServeMux() *ServeMux { return new(ServeMux) }
 
 // HandleFunc registers the handler function for the given pattern.
 func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *RequestFrame)) {
-	mux.handle(cmd, HandlerFunc(handler))
+	mux.Handle(cmd, HandlerFunc(handler))
 }
 
-// handle registers the handler for the given pattern.
+// Handle registers the handler for the given pattern.
 // If a handler already exists for pattern, handle panics.
-func (mux *ServeMux) handle(cmd Cmd, handler Handler) {
+func (mux *ServeMux) Handle(cmd Cmd, handler Handler) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 
 	if handler == nil {
-		panic("http: nil handler")
+		panic("qrpc: nil handler")
 	}
 	if _, exist := mux.m[cmd]; exist {
-		panic("http: multiple registrations for " + string(cmd))
+		panic("qrpc: multiple registrations for " + string(cmd))
 	}
 
 	if mux.m == nil {
@@ -70,6 +71,7 @@ func (mux *ServeMux) handle(cmd Cmd, handler Handler) {
 // cmd matches the request.
 func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
+	fmt.Println("cmd", r.Cmd)
 	h, ok := mux.m[r.Cmd]
 	if !ok {
 		return
@@ -90,6 +92,8 @@ type Server struct {
 	id2Conn    []map[string]*serveconn
 	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
 
+	wg sync.WaitGroup // wait group for goroutines
+
 	pushID uint64
 }
 
@@ -99,7 +103,7 @@ func NewServer(bindings []ServerBinding) *Server {
 		bindings:   bindings,
 		listeners:  make(map[net.Listener]struct{}),
 		doneChan:   make(chan struct{}),
-		id2Conn:    make([]map[string]*serveconn, len(bindings)),
+		id2Conn:    []map[string]*serveconn{map[string]*serveconn{}, map[string]*serveconn{}},
 		activeConn: make([]sync.Map, len(bindings))}
 }
 
@@ -109,14 +113,19 @@ func (srv *Server) ListenAndServe() error {
 	for idx, binding := range srv.bindings {
 		ln, err := net.Listen("tcp", binding.Addr)
 		if err != nil {
-			srv.Shutdown(nil)
+			srv.Shutdown()
 			return err
 		}
 
-		go srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
+		goFunc(&srv.wg, func(ln net.Listener, idx int) func() {
+			return func() {
+				srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
+			}
+		}(ln, idx))
 
 	}
 
+	srv.wg.Wait()
 	return nil
 }
 
@@ -173,7 +182,11 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 		tempDelay = 0
 		c := srv.newConn(rw, idx)
 
-		go c.serve(serveCtx)
+		goFunc(&srv.wg, func(c *serveconn) func() {
+			return func() {
+				c.serve(serveCtx)
+			}
+		}(c))
 	}
 }
 
@@ -228,18 +241,20 @@ func (srv *Server) bindID(sc *serveconn, id string) {
 		if v == sc {
 			return
 		}
-		ch, _ := v.Close()
+		ch, _ := v.closeLocked(true)
 		<-ch
 	}
 
 	srv.id2Conn[idx][id] = sc
 }
 
-func (srv *Server) untrack(sc *serveconn) {
+func (srv *Server) untrack(sc *serveconn, inLock bool) {
 
 	idx := sc.idx
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
+	if !inLock {
+		srv.mu.Lock()
+		defer srv.mu.Unlock()
+	}
 
 	if sc.id != "" {
 		delete(srv.id2Conn[idx], sc.id)
@@ -255,10 +270,7 @@ func (srv *Server) logf(format string, args ...interface{}) {
 var shutdownPollInterval = 500 * time.Millisecond
 
 // Shutdown gracefully shutdown the server
-func (srv *Server) Shutdown(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (srv *Server) Shutdown() error {
 
 	srv.mu.Lock()
 	lnerr := srv.closeListenersLocked()
@@ -269,18 +281,9 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 
 	close(srv.doneChan)
 
-	ticker := time.NewTicker(shutdownPollInterval)
-	defer ticker.Stop()
-	for {
-		if srv.waitConnDone() {
-			return lnerr
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-ticker.C:
-		}
-	}
+	srv.wg.Wait()
+
+	return nil
 }
 
 // PushFrame pushes a frame to specified connection
@@ -294,18 +297,6 @@ func (srv *Server) PushFrame(conn *serveconn, cmd Cmd, flags PacketFlag, payload
 	w.WriteBytes(payload)
 	return w.EndWrite()
 
-}
-
-func (srv *Server) waitConnDone() bool {
-	done := true
-	for idx := 0; done && idx < len(srv.bindings); idx++ {
-		srv.activeConn[idx].Range(func(key, value interface{}) bool {
-			done = false
-			return false
-		})
-	}
-
-	return done
 }
 
 func (srv *Server) closeListenersLocked() error {

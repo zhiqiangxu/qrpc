@@ -13,6 +13,8 @@ const (
 	StreamEndFlag
 	// NBFlag means it should be handled nonblockly
 	NBFlag
+	// CancelFlag cancels a stream (TODO)
+	CancelFlag
 	// CompressFlag indicate packet is compressed (TODO)
 	CompressFlag
 	// PushFlag mean the frame is pushed from server
