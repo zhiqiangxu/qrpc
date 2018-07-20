@@ -19,17 +19,17 @@ type FrameWriter interface {
 
 // A Handler responds to an qrpc request.
 type Handler interface {
-	ServeQRPC(FrameWriter, *Frame)
+	ServeQRPC(FrameWriter, *RequestFrame)
 }
 
 // The HandlerFunc type is an adapter to allow the use of
 // ordinary functions as qrpc handlers. If f is a function
 // with the appropriate signature, HandlerFunc(f) is a
 // Handler that calls f.
-type HandlerFunc func(FrameWriter, *Frame)
+type HandlerFunc func(FrameWriter, *RequestFrame)
 
 // ServeQRPC calls f(w, r).
-func (f HandlerFunc) ServeQRPC(w FrameWriter, r *Frame) {
+func (f HandlerFunc) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	f(w, r)
 }
 
@@ -43,7 +43,7 @@ type ServeMux struct {
 func NewServeMux() *ServeMux { return new(ServeMux) }
 
 // HandleFunc registers the handler function for the given pattern.
-func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *Frame)) {
+func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *RequestFrame)) {
 	mux.handle(cmd, HandlerFunc(handler))
 }
 
@@ -68,7 +68,7 @@ func (mux *ServeMux) handle(cmd Cmd, handler Handler) {
 
 // ServeQRPC dispatches the request to the handler whose
 // cmd matches the request.
-func (mux *ServeMux) ServeQRPC(w FrameWriter, r *Frame) {
+func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {

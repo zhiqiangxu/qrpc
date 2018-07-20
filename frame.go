@@ -1,6 +1,8 @@
 package qrpc
 
-import "context"
+import (
+	"context"
+)
 
 // Frame models a qrpc frame
 // all fields are readly only
@@ -47,4 +49,22 @@ func (r *Frame) WithContext(ctx context.Context) *Frame {
 	r2.ctx = ctx
 
 	return r2
+}
+
+// RequestFrame is client->server
+type RequestFrame Frame
+
+// ConnectionInfo returns the underlying ConnectionInfo
+func (r *RequestFrame) ConnectionInfo() *ConnectionInfo {
+
+	return r.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+
+}
+
+// Close the underlying connection
+func (r *RequestFrame) Close() error {
+
+	ci := r.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.SC.Close()
+	return nil
 }

@@ -67,7 +67,7 @@ const (
 
 func startServer() {
 	handler := qrpc.NewServeMux()
-	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.Frame) {
+	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 

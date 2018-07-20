@@ -42,6 +42,41 @@ type serveconn struct {
 // used to store custom information
 var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
+// ConnectionInfo for store info on connection
+type ConnectionInfo struct {
+	SC       *serveconn // read only
+	anything interface{}
+}
+
+// Lock reuses the mu of serveconn
+func (ci *ConnectionInfo) Lock() {
+	ci.SC.mu.Lock()
+}
+
+// Unlock reuses the mu of serveconn
+func (ci *ConnectionInfo) Unlock() {
+	ci.SC.mu.Unlock()
+}
+
+// Store sets anything
+func (ci *ConnectionInfo) Store(anything interface{}) {
+	ci.SC.mu.Lock()
+	ci.anything = anything
+	ci.SC.mu.Unlock()
+}
+
+// StoreLocked sets anything without lock
+func (ci *ConnectionInfo) StoreLocked(anything interface{}) {
+	ci.anything = anything
+}
+
+// Load gets anything
+func (ci *ConnectionInfo) Load(anything interface{}) interface{} {
+	ci.SC.mu.Lock()
+	defer ci.SC.mu.Unlock()
+	return ci.anything
+}
+
 // GetServer returns the server
 func (sc *serveconn) GetServer() *Server {
 	return sc.server
@@ -51,6 +86,8 @@ func (sc *serveconn) GetServer() *Server {
 func (sc *serveconn) serve(ctx context.Context) {
 
 	ctx, cancelCtx := context.WithCancel(ctx)
+	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
+
 	sc.cancelCtx = cancelCtx
 	sc.ctx = ctx
 
@@ -81,16 +118,12 @@ func (sc *serveconn) serve(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case res := <-sc.readFrameCh:
-			if res.f.ctx != nil {
-				panic("res.f.ctx is not nil")
-			}
-			res.f.ctx = ctx
 			if res.f.Flags&NBFlag == 0 {
-				handler.ServeQRPC(sc.writer, res.f)
+				handler.ServeQRPC(sc.writer, (*RequestFrame)(res.f))
 				res.readMore()
 			} else {
 				res.readMore()
-				go handler.ServeQRPC(sc.GetWriter(), res.f)
+				go handler.ServeQRPC(sc.GetWriter(), (*RequestFrame)(res.f))
 			}
 		}
 
@@ -107,14 +140,6 @@ func (sc *serveconn) SetID(id string) {
 	defer sc.mu.Unlock()
 	sc.id = id
 	sc.server.bindID(sc, id)
-}
-
-func (sc *serveconn) Lock() {
-	sc.mu.Lock()
-}
-
-func (sc *serveconn) Unlock() {
-	sc.mu.Unlock()
 }
 
 func (sc *serveconn) GetID() string {
