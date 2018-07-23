@@ -90,10 +90,10 @@ func (sc *serveconn) serve(ctx context.Context) {
 	sc.reader = newFrameReader(ctx, sc.rwc, binding.DefaultReadTimeout)
 	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
-	goFunc(&sc.wg, func() {
+	GoFunc(&sc.wg, func() {
 		sc.readFrames()
 	})
-	goFunc(&sc.wg, func() {
+	GoFunc(&sc.wg, func() {
 		sc.writeFrames(binding.DefaultWriteTimeout)
 	})
 
@@ -113,7 +113,7 @@ func (sc *serveconn) serve(ctx context.Context) {
 				res.readMore()
 			} else {
 				res.readMore()
-				goFunc(&sc.wg, func() {
+				GoFunc(&sc.wg, func() {
 					sc.handleRequestPanic(res.f)
 					handler.ServeQRPC(sc.GetWriter(), res.f)
 					sc.stopReadStream(res.f.RequestID)

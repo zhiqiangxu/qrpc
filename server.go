@@ -117,7 +117,7 @@ func (srv *Server) ListenAndServe() error {
 			return err
 		}
 
-		goFunc(&srv.wg, func(idx int) func() {
+		GoFunc(&srv.wg, func(idx int) func() {
 			return func() {
 				srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
 			}
@@ -182,7 +182,7 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 		tempDelay = 0
 		c := srv.newConn(rw, idx)
 
-		goFunc(&srv.wg, func() {
+		GoFunc(&srv.wg, func() {
 			c.serve(serveCtx)
 		})
 	}
@@ -289,17 +289,48 @@ func (srv *Server) Shutdown() error {
 	return nil
 }
 
-// PushFrame pushes a frame to specified connection
-// it is thread safe
-func (srv *Server) PushFrame(conn *serveconn, cmd Cmd, flags PacketFlag, payload []byte) error {
-
+// GetPushID gets the pushId
+func (srv *Server) GetPushID() uint64 {
 	pushID := atomic.AddUint64(&srv.pushID, 1)
-	flags &= PushFlag
-	w := conn.GetWriter()
-	w.StartWrite(pushID, cmd, flags)
-	w.WriteBytes(payload)
-	return w.EndWrite()
+	return pushID
+}
 
+// PushFrameByID pushes to specific ids
+// it is thread safe
+func (srv *Server) PushFrameByID(idx int, ids []string, pushID uint64, cmd Cmd, flags PacketFlag, payload []byte) uint64 {
+
+	var (
+		count uint64
+		wg    sync.WaitGroup
+	)
+
+	flags &= PushFlag
+	for _, id := range ids {
+		v, ok := srv.id2Conn[idx].Load(id)
+		if ok {
+			GoFunc(&wg, func() {
+				writer := v.(*serveconn).GetWriter()
+				writer.StartWrite(pushID, cmd, flags)
+				writer.WriteBytes(payload)
+				err := writer.EndWrite()
+				if err == nil {
+					atomic.AddUint64(&count, 1)
+				}
+			})
+		}
+	}
+
+	wg.Wait()
+
+	return count
+}
+
+// WalkConn walks through each serveconn
+func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) {
+	srv.activeConn[idx].Range(func(k, v interface{}) bool {
+		sc := k.(*serveconn)
+		return f(sc.GetWriter(), sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo))
+	})
 }
 
 func (srv *Server) closeListenersLocked() error {

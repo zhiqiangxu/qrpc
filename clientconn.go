@@ -96,11 +96,11 @@ func (conn *Connection) wakeup() {
 	conn.ctx, conn.cancelCtx = context.WithCancel(conn.conf.Ctx)
 	conn.reader = newFrameReader(conn.ctx, conn.Conn, conn.conf.ReadTimeout)
 
-	goFunc(&conn.wg, func() {
+	GoFunc(&conn.wg, func() {
 		conn.readFrames()
 	})
 
-	goFunc(&conn.wg, func() {
+	GoFunc(&conn.wg, func() {
 		conn.writeFrames()
 	})
 }
@@ -289,7 +289,7 @@ func (conn *Connection) readFrames() {
 				conn.subscriber(conn, frame)
 			}
 
-			return
+			continue
 		}
 
 		// deal with pulled frames
