@@ -88,6 +88,7 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
 		// ending frame for the stream
 		select {
 		case ch <- f:
+			close(ch)
 			delete(dfr.streamFrameCh, requestID)
 			return dfr.ReadFrame()
 		case <-dfr.ctx.Done():
@@ -131,6 +132,11 @@ func (dfr *defaultFrameReader) CloseStream(requestID uint64) {
 func (dfr *defaultFrameReader) closeStreams() {
 	dfr.mu.Lock()
 	for _, requestID := range dfr.doneStreams {
+		ch, ok := dfr.streamFrameCh[requestID]
+		if !ok {
+			continue
+		}
+		close(ch)
 		delete(dfr.streamFrameCh, requestID)
 	}
 	dfr.mu.Unlock()

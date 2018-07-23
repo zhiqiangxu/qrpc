@@ -8,6 +8,7 @@ import (
 	"math"
 	"net"
 	"sync"
+	"time"
 )
 
 // Connection defines a qrpc connection
@@ -35,6 +36,7 @@ type Connection struct {
 // Response for response frames
 type Response interface {
 	GetFrame() *Frame
+	GetFrameWithTimeout(time.Duration) *Frame
 }
 
 type response struct {
@@ -44,6 +46,15 @@ type response struct {
 func (r *response) GetFrame() *Frame {
 	frame := <-r.Frame
 	return frame
+}
+
+func (r *response) GetFrameWithTimeout(timeout time.Duration) *Frame {
+	select {
+	case frame := <-r.Frame:
+		return frame
+	case <-time.After(timeout):
+		return nil
+	}
 }
 
 func (r *response) SetResponse(frame *Frame) {
