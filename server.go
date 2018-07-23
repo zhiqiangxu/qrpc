@@ -295,34 +295,15 @@ func (srv *Server) GetPushID() uint64 {
 	return pushID
 }
 
-// PushFrameByID pushes to specific ids
-// it is thread safe
-func (srv *Server) PushFrameByID(idx int, ids []string, pushID uint64, cmd Cmd, flags PacketFlag, payload []byte) uint64 {
-
-	var (
-		count uint64
-		wg    sync.WaitGroup
-	)
-
-	flags &= PushFlag
+// WalkConnByID iterates over  serveconn by ids
+func (srv *Server) WalkConnByID(idx int, ids []string, f func(FrameWriter, *ConnectionInfo)) {
 	for _, id := range ids {
 		v, ok := srv.id2Conn[idx].Load(id)
 		if ok {
-			GoFunc(&wg, func() {
-				writer := v.(*serveconn).GetWriter()
-				writer.StartWrite(pushID, cmd, flags)
-				writer.WriteBytes(payload)
-				err := writer.EndWrite()
-				if err == nil {
-					atomic.AddUint64(&count, 1)
-				}
-			})
+			sc := v.(*serveconn)
+			f(v.(*serveconn).GetWriter(), sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo))
 		}
 	}
-
-	wg.Wait()
-
-	return count
 }
 
 // WalkConn walks through each serveconn
