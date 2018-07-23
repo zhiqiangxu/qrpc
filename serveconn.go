@@ -22,10 +22,10 @@ type serveconn struct {
 
 	idx int
 
-	mu sync.Mutex
 	id string // the only mutable
 
-	closeCh chan struct{}
+	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
+	untrackedCh chan struct{}
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
@@ -46,36 +46,7 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
 	SC       *serveconn // read only
-	anything interface{}
-}
-
-// Lock reuses the mu of serveconn
-func (ci *ConnectionInfo) Lock() {
-	ci.SC.mu.Lock()
-}
-
-// Unlock reuses the mu of serveconn
-func (ci *ConnectionInfo) Unlock() {
-	ci.SC.mu.Unlock()
-}
-
-// Store sets anything
-func (ci *ConnectionInfo) Store(anything interface{}) {
-	ci.SC.mu.Lock()
-	ci.anything = anything
-	ci.SC.mu.Unlock()
-}
-
-// StoreLocked sets anything without lock
-func (ci *ConnectionInfo) StoreLocked(anything interface{}) {
-	ci.anything = anything
-}
-
-// Load gets anything
-func (ci *ConnectionInfo) Load(anything interface{}) interface{} {
-	ci.SC.mu.Lock()
-	defer ci.SC.mu.Unlock()
-	return ci.anything
+	Anything interface{}
 }
 
 // Server returns the server
@@ -184,15 +155,11 @@ func (sc *serveconn) SetID(id string) {
 	if id == "" {
 		panic("empty id not allowed")
 	}
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
 	sc.id = id
 	sc.server.bindID(sc, id)
 }
 
 func (sc *serveconn) GetID() string {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
 	return sc.id
 }
 
@@ -274,21 +241,24 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 }
 
 // Close the connection.
-func (sc *serveconn) Close() (<-chan struct{}, error) {
+func (sc *serveconn) Close() error {
 
-	return sc.closeLocked(false)
+	ok, ch := sc.server.untrack(sc)
+	if !ok {
+		<-ch
+	}
+	return sc.closeUntracked()
 
 }
 
-func (sc *serveconn) closeLocked(serverLocked bool) (<-chan struct{}, error) {
+func (sc *serveconn) closeUntracked() error {
 	err := sc.rwc.Close()
 	if err != nil {
-		return sc.closeCh, err
+		return err
 	}
 	sc.cancelCtx()
 
-	sc.server.untrack(sc, serverLocked)
-	close(sc.closeCh)
+	close(sc.untrackedCh)
 
-	return sc.closeCh, nil
+	return nil
 }

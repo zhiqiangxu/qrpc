@@ -13,9 +13,9 @@ const (
 	StreamEndFlag
 	// NBFlag means it should be handled nonblockly
 	NBFlag
-	// CancelFlag cancels a stream (TODO)
+	// CancelFlag cancels a stream [client to server] (TODO)
 	CancelFlag
-	// ErrorFlag indicate client should close the specific stream
+	// ErrorFlag indicate client should close the specific stream [server to client] (TODO)
 	ErrorFlag
 	// CompressFlag indicate packet is compressed (TODO)
 	CompressFlag

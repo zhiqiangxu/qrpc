@@ -85,10 +85,11 @@ type Server struct {
 	bindings []ServerBinding
 
 	// manages below
-	mu         sync.Mutex
-	listeners  map[net.Listener]struct{}
-	doneChan   chan struct{}
-	id2Conn    []map[string]*serveconn
+	mu        sync.Mutex
+	listeners map[net.Listener]struct{}
+	doneChan  chan struct{}
+
+	id2Conn    []sync.Map
 	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
 
 	wg sync.WaitGroup // wait group for goroutines
@@ -102,7 +103,7 @@ func NewServer(bindings []ServerBinding) *Server {
 		bindings:   bindings,
 		listeners:  make(map[net.Listener]struct{}),
 		doneChan:   make(chan struct{}),
-		id2Conn:    []map[string]*serveconn{map[string]*serveconn{}, map[string]*serveconn{}},
+		id2Conn:    make([]sync.Map, len(bindings)),
 		activeConn: make([]sync.Map, len(bindings))}
 }
 
@@ -219,7 +220,7 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 		server:       srv,
 		rwc:          rwc,
 		idx:          idx,
-		closeCh:      make(chan struct{}),
+		untrackedCh:  make(chan struct{}),
 		readFrameCh:  make(chan readFrameResult),
 		writeFrameCh: make(chan writeFrameRequest)}
 
@@ -231,33 +232,37 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 func (srv *Server) bindID(sc *serveconn, id string) {
 
 	idx := sc.idx
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	v, ok := srv.id2Conn[idx][id]
+	v, ok := srv.id2Conn[idx].Load(id)
+	vsc := v.(*serveconn)
 	if ok {
-		if v == sc {
+		if vsc == sc {
 			return
 		}
-		ch, _ := v.closeLocked(true)
-		<-ch
+		ok, ch := srv.untrack(vsc)
+		if !ok {
+			<-ch
+		}
+		vsc.closeUntracked()
 	}
 
-	srv.id2Conn[idx][id] = sc
+	srv.id2Conn[idx].Store(id, sc)
 }
 
-func (srv *Server) untrack(sc *serveconn, inLock bool) {
+func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
 
-	idx := sc.idx
-	if !inLock {
-		srv.mu.Lock()
-		defer srv.mu.Unlock()
+	locked := atomic.CompareAndSwapUint32(&sc.untrack, 0, 1)
+	if !locked {
+		return false, sc.untrackedCh
 	}
+	idx := sc.idx
 
 	if sc.id != "" {
-		delete(srv.id2Conn[idx], sc.id)
+		srv.id2Conn[idx].Delete(sc.id)
 	}
 	srv.activeConn[idx].Delete(sc)
 
+	close(sc.untrackedCh)
+	return true, sc.untrackedCh
 }
 
 func (srv *Server) logf(format string, args ...interface{}) {

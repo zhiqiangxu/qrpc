@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"sync"
 )
 
 // defaultFrameReader is responsible for read frames
@@ -14,6 +15,8 @@ type defaultFrameReader struct {
 	rbuf          [16]byte // for header
 	streamFrameCh map[uint64]chan<- *Frame
 	ctx           context.Context
+	mu            sync.Mutex
+	doneStreams   []uint64
 }
 
 // newFrameReader creates a FrameWriter instance to read frames
@@ -29,6 +32,8 @@ var (
 )
 
 func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
+
+	dfr.closeStreams()
 
 	f, err := dfr.readFrame()
 	if err != nil {
@@ -118,5 +123,15 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 }
 
 func (dfr *defaultFrameReader) CloseStream(requestID uint64) {
-	delete(dfr.streamFrameCh, requestID)
+	dfr.mu.Lock()
+	dfr.doneStreams = append(dfr.doneStreams, requestID)
+	dfr.mu.Unlock()
+}
+
+func (dfr *defaultFrameReader) closeStreams() {
+	dfr.mu.Lock()
+	for _, requestID := range dfr.doneStreams {
+		delete(dfr.streamFrameCh, requestID)
+	}
+	dfr.mu.Unlock()
 }

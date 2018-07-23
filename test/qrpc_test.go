@@ -74,7 +74,6 @@ func startServer() {
 		// time.Sleep(time.Hour)
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
-		fmt.Println("in server handle")
 		writer.WriteBytes(append([]byte("hello world "), request.Payload...))
 		err := writer.EndWrite()
 		if err != nil {
