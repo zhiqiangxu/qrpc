@@ -81,7 +81,7 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 		offset += n
 		if err != nil {
 			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {
-				if time.Now().After(endTime) {
+				if timeout > 0 && time.Now().After(endTime) {
 					return err
 				}
 			} else {

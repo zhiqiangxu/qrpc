@@ -1,6 +1,8 @@
 package qrpc
 
-import "sync"
+import (
+	"sync"
+)
 
 func goFunc(routinesGroup *sync.WaitGroup, f func()) {
 	routinesGroup.Add(1)

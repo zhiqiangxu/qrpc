@@ -13,7 +13,7 @@ type ServerBinding struct {
 }
 
 // SubFunc for subscribe callback
-type SubFunc func(*Frame)
+type SubFunc func(*Connection, *Frame)
 
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {

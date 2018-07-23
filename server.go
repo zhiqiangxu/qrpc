@@ -233,8 +233,9 @@ func (srv *Server) bindID(sc *serveconn, id string) {
 
 	idx := sc.idx
 	v, ok := srv.id2Conn[idx].Load(id)
-	vsc := v.(*serveconn)
+
 	if ok {
+		vsc := v.(*serveconn)
 		if vsc == sc {
 			return
 		}

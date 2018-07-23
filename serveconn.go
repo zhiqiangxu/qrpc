@@ -252,13 +252,12 @@ func (sc *serveconn) Close() error {
 }
 
 func (sc *serveconn) closeUntracked() error {
+
 	err := sc.rwc.Close()
 	if err != nil {
 		return err
 	}
 	sc.cancelCtx()
-
-	close(sc.untrackedCh)
 
 	return nil
 }

@@ -18,7 +18,7 @@ func NewClient(conf ConnectionConfig) *Client {
 }
 
 // GetConn get a connection from Client
-func (cli *Client) GetConn(addr string, f func(*Frame)) *Connection {
+func (cli *Client) GetConn(addr string, f func(*Connection, *Frame)) *Connection {
 
 	cli.mu.Lock()
 

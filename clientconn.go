@@ -66,7 +66,7 @@ func (r *response) Close() {
 }
 
 // NewConnection creates a connection without Client
-func NewConnection(addr string, conf ConnectionConfig, f func(*Frame)) (*Connection, error) {
+func NewConnection(addr string, conf ConnectionConfig, f func(*Connection, *Frame)) (*Connection, error) {
 	return newConnectionWithPool(addr, conf, nil, SubFunc(f))
 }
 
@@ -97,11 +97,11 @@ func (conn *Connection) wakeup() {
 	conn.reader = newFrameReader(conn.ctx, conn.Conn, conn.conf.ReadTimeout)
 
 	goFunc(&conn.wg, func() {
-		go conn.readFrames()
+		conn.readFrames()
 	})
 
 	goFunc(&conn.wg, func() {
-		go conn.writeFrames()
+		conn.writeFrames()
 	})
 }
 
@@ -109,6 +109,11 @@ func (conn *Connection) wakeup() {
 func (conn *Connection) suspend() {
 
 	conn.cancelCtx()
+	conn.wg.Wait()
+}
+
+// Wait until closed by peer
+func (conn *Connection) Wait() {
 	conn.wg.Wait()
 }
 
@@ -246,6 +251,8 @@ func (conn *Connection) Close(err error) error {
 		v.Close()
 	}
 
+	conn.cancelCtx()
+
 	var fatal bool
 	if !(err == context.Canceled || err == context.DeadlineExceeded) {
 		fatal = true
@@ -279,7 +286,7 @@ func (conn *Connection) readFrames() {
 		if frame.Flags&PushFlag != 0 {
 			// pushed frame
 			if conn.subscriber != nil {
-				conn.subscriber(frame)
+				conn.subscriber(conn, frame)
 			}
 
 			return
@@ -315,8 +322,8 @@ func (conn *Connection) writeFrames() (err error) {
 			if err != nil {
 				return err
 			}
-		case <-conn.conf.Ctx.Done():
-			return conn.conf.Ctx.Err()
+		case <-conn.ctx.Done():
+			return conn.ctx.Err()
 		}
 	}
 }
