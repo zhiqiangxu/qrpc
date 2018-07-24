@@ -20,9 +20,9 @@ type Frame struct {
 	ctx context.Context //fyi: https://www.reddit.com/r/golang/comments/69j71a/why_does_httprequestwithcontext_do_a_shallow_copy/
 }
 
-// NextFrame get the next frame in stream
-func (r *Frame) NextFrame() *Frame {
-	return <-r.frameCh
+// FrameCh get the next frame ch
+func (r *Frame) FrameCh() <-chan *Frame {
+	return r.frameCh
 }
 
 // Context returns the request's context. To change the context, use
