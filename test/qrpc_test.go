@@ -2,9 +2,10 @@ package test
 
 import (
 	"fmt"
-	"qrpc"
 	"testing"
 	"time"
+
+	"github.com/zhiqiangxu/qrpc"
 )
 
 const (
