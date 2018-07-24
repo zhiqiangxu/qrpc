@@ -37,6 +37,7 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
 
 	f, err := dfr.readFrame()
 	if err != nil {
+		dfr.shutdown()
 		return f, err
 	}
 
@@ -98,6 +99,11 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
 	}
 }
 
+func (dfr *defaultFrameReader) shutdown() {
+	for _, ch := range dfr.streamFrameCh {
+		close(ch)
+	}
+}
 func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	header := dfr.rbuf[:]

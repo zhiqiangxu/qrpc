@@ -124,7 +124,7 @@ func (conn *Connection) GetWriter() FrameWriter {
 
 // StreamWriter is returned by StreamRequest
 type StreamWriter interface {
-	StartWrite()
+	StartWrite(cmd Cmd)
 	WriteBytes(v []byte)     // v is copied in WriteBytes
 	EndWrite(end bool) error // block until scheduled
 }
@@ -132,25 +132,24 @@ type StreamWriter interface {
 type defaultStreamWriter struct {
 	w         *defaultFrameWriter
 	requestID uint64
-	cmd       Cmd
 	flags     PacketFlag
 }
 
 // NewStreamWriter creates a streamwriter from StreamWriter
-func NewStreamWriter(w FrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) StreamWriter {
+func NewStreamWriter(w FrameWriter, requestID uint64, flags PacketFlag) StreamWriter {
 	dfr, ok := w.(*defaultFrameWriter)
 	if !ok {
 		return nil
 	}
-	return newStreamWriter(dfr, requestID, cmd, flags)
+	return newStreamWriter(dfr, requestID, flags)
 }
 
-func newStreamWriter(w *defaultFrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) StreamWriter {
-	return &defaultStreamWriter{w: w, requestID: requestID, cmd: cmd, flags: flags}
+func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags PacketFlag) StreamWriter {
+	return &defaultStreamWriter{w: w, requestID: requestID, flags: flags}
 }
 
-func (dsw *defaultStreamWriter) StartWrite() {
-	dsw.w.StartWrite(dsw.requestID, dsw.cmd, dsw.flags)
+func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
+	dsw.w.StartWrite(dsw.requestID, cmd, dsw.flags)
 }
 
 func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
@@ -169,7 +168,7 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags PacketFlag, payload []byte)
 	if err != nil {
 		return nil, nil, err
 	}
-	return resp, newStreamWriter(writer, requestID, cmd, flags), nil
+	return resp, newStreamWriter(writer, requestID, flags), nil
 }
 
 // Request send a request frame and returns response frame
