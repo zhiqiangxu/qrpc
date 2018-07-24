@@ -46,4 +46,5 @@ func (cli *Client) GetConn(addr string, f func(*Connection, *Frame)) *Connection
 	conn.wakeup()
 	conn.subscriber = f
 	return conn
+
 }
