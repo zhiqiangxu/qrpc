@@ -119,7 +119,7 @@ func (conn *Connection) Wait() {
 
 // GetWriter return a FrameWriter
 func (conn *Connection) GetWriter() FrameWriter {
-	return newFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+	return newFrameWriter(conn.ctx, conn.writeFrameCh)
 }
 
 // StreamWriter is returned by StreamRequest
@@ -216,7 +216,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags PacketFlag, payload []byt
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
-	writer := newFrameWriter(conn.conf.Ctx, conn.writeFrameCh)
+	writer := newFrameWriter(conn.ctx, conn.writeFrameCh)
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()

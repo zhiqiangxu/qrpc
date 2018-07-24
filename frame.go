@@ -73,3 +73,13 @@ func (r *RequestFrame) Close() error {
 	ci.SC.Close()
 	return nil
 }
+
+// Context for RequestFrame
+func (r *RequestFrame) Context() context.Context {
+	return (*Frame)(r).Context()
+}
+
+// FrameCh for RequestFrame
+func (r *RequestFrame) FrameCh() <-chan *Frame {
+	return (*Frame)(r).FrameCh()
+}
