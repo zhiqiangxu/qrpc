@@ -136,7 +136,16 @@ type defaultStreamWriter struct {
 	flags     PacketFlag
 }
 
-func newStreamWriter(w *defaultFrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) *defaultStreamWriter {
+// NewStreamWriter creates a streamwriter from StreamWriter
+func NewStreamWriter(w FrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) StreamWriter {
+	dfr, ok := w.(*defaultFrameWriter)
+	if !ok {
+		return nil
+	}
+	return newStreamWriter(dfr, requestID, cmd, flags)
+}
+
+func newStreamWriter(w *defaultFrameWriter, requestID uint64, cmd Cmd, flags PacketFlag) StreamWriter {
 	return &defaultStreamWriter{w: w, requestID: requestID, cmd: cmd, flags: flags}
 }
 
@@ -155,6 +164,7 @@ func (dsw *defaultStreamWriter) EndWrite(end bool) error {
 // StreamRequest is for streamed request
 func (conn *Connection) StreamRequest(cmd Cmd, flags PacketFlag, payload []byte) (Response, StreamWriter, error) {
 
+	flags |= StreamFlag | NBFlag
 	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
 		return nil, nil, err

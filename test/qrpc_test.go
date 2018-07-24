@@ -20,7 +20,7 @@ func TestHelloWorld(t *testing.T) {
 	conf := qrpc.ConnectionConfig{}
 	cli := qrpc.NewClient(conf)
 
-	conn := cli.GetConn(addr, func(frame *qrpc.Frame) {
+	conn := cli.GetConn(addr, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
 
@@ -46,7 +46,7 @@ func TestWriter(t *testing.T) {
 	conf := qrpc.ConnectionConfig{WriteTimeout: 2}
 	cli := qrpc.NewClient(conf)
 
-	conn := cli.GetConn(addr, func(frame *qrpc.Frame) {
+	conn := cli.GetConn(addr, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
 

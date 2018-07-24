@@ -13,7 +13,7 @@ import (
 type defaultFrameReader struct {
 	*Reader
 	rbuf          [16]byte // for header
-	streamFrameCh map[uint64]chan<- *Frame
+	streamFrameCh map[uint64]chan *Frame
 	ctx           context.Context
 	mu            sync.Mutex
 	doneStreams   []uint64
@@ -57,13 +57,14 @@ func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
 	if flags&StreamEndFlag == 0 {
 		if dfr.streamFrameCh == nil {
 			// the first stream for the connection
-			dfr.streamFrameCh = make(map[uint64]chan<- *Frame)
+			dfr.streamFrameCh = make(map[uint64]chan *Frame)
 		}
 		ch, ok := dfr.streamFrameCh[requestID]
 		if !ok {
 			// the first frame for the stream
-			ch = make(chan<- *Frame)
+			ch = make(chan *Frame)
 			dfr.streamFrameCh[requestID] = ch
+			f.frameCh = ch
 			return f, nil
 		}
 

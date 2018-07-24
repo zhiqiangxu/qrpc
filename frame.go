@@ -11,13 +11,18 @@ type Frame struct {
 	Flags     PacketFlag
 	Cmd       Cmd
 	Payload   []byte
-	FrameCh   <-chan *Frame // non nil for the first frame in stream
+	frameCh   chan *Frame // non nil for the first frame in stream
 
 	// ctx is either the client or server context. It should only
 	// be modified via copying the whole Request using WithContext.
 	// It is unexported to prevent people from using Context wrong
 	// and mutating the contexts held by callers of the same request.
 	ctx context.Context //fyi: https://www.reddit.com/r/golang/comments/69j71a/why_does_httprequestwithcontext_do_a_shallow_copy/
+}
+
+// NextFrame get the next frame in stream
+func (r *Frame) NextFrame() *Frame {
+	return <-r.frameCh
 }
 
 // Context returns the request's context. To change the context, use

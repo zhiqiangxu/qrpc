@@ -66,7 +66,7 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
 	if end {
-		dfw.wbuf[12] &= byte(StreamEndFlag)
+		dfw.wbuf[12] |= byte(StreamEndFlag)
 	}
 	return dfw.EndWrite()
 }

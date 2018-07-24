@@ -83,6 +83,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 type Server struct {
 	// one handler for each listening address
 	bindings []ServerBinding
+	upTime   time.Time
 
 	// manages below
 	mu        sync.Mutex
@@ -101,6 +102,7 @@ type Server struct {
 func NewServer(bindings []ServerBinding) *Server {
 	return &Server{
 		bindings:   bindings,
+		upTime:     time.Now(),
 		listeners:  make(map[net.Listener]struct{}),
 		doneChan:   make(chan struct{}),
 		id2Conn:    make([]sync.Map, len(bindings)),
