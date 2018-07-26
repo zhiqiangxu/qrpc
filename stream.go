@@ -51,7 +51,7 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	if flags.IsPush() {
 		s, ok := cs.pushstreams[requestID]
 		if !ok {
-			s = newStream(ctx, requestID, flags)
+			s = newStream(ctx, requestID)
 			cs.pushstreams[requestID] = s
 
 			GoFunc(&cs.wg, func() {
@@ -70,7 +70,7 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	defer cs.mu.Unlock()
 	s, ok := cs.streams[requestID]
 	if !ok {
-		s = newStream(ctx, requestID, flags)
+		s = newStream(ctx, requestID)
 		cs.streams[requestID] = s
 		return s
 	}
@@ -113,11 +113,10 @@ type stream struct {
 	binded     bool
 }
 
-func newStream(ctx context.Context, requestID uint64, flags FrameFlag) *stream {
+func newStream(ctx context.Context, requestID uint64) *stream {
 	ctx, cancelFunc := context.WithCancel(ctx)
 	s := &stream{ctx: ctx, cancelFunc: cancelFunc, ID: requestID, frameCh: make(chan *Frame)}
 
-	s.closePeerIfNeeded(flags)
 	return s
 }
 
@@ -188,6 +187,7 @@ func (s *stream) closePeerIfNeeded(flags FrameFlag) {
 
 	if flags.IsDone() {
 		s.closedPeer = true
+
 		close(s.frameCh)
 		if s.closedSelf {
 			s.reset()
