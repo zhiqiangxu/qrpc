@@ -22,7 +22,8 @@ type serveconn struct {
 
 	idx int
 
-	id string // the only mutable
+	id string // the only mutable for user
+	cs *connstreams
 
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
 	untrackedCh chan struct{}
@@ -105,18 +106,17 @@ func (sc *serveconn) serve(ctx context.Context) {
 			return
 		case res := <-sc.readFrameCh:
 
-			if res.f.Flags&NBFlag == 0 {
+			if !res.f.Flags.IsNonBlock() {
 				func() {
-					sc.handleRequestPanic(res.f)
+					defer sc.handleRequestPanic(res.f)
 					handler.ServeQRPC(sc.writer, res.f)
 				}()
 				res.readMore()
 			} else {
 				res.readMore()
 				GoFunc(&sc.wg, func() {
-					sc.handleRequestPanic(res.f)
+					defer sc.handleRequestPanic(res.f)
 					handler.ServeQRPC(sc.GetWriter(), res.f)
-					sc.stopReadStream(res.f.RequestID)
 				})
 			}
 		}
@@ -125,27 +125,24 @@ func (sc *serveconn) serve(ctx context.Context) {
 
 }
 
-func (sc *serveconn) stopReadStream(requestID uint64) {
-	sc.reader.CloseStream(requestID)
-}
-
 func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
 	if err := recover(); err != nil {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
 		sc.server.logf("qrpc: handleRequestPanic %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
+	}
 
-		sc.stopReadStream(frame.RequestID)
+	s := frame.Stream
+	if !s.IsSelfClosed() {
 		// send error frame
 		writer := sc.GetWriter()
-		writer.StartWrite(frame.RequestID, frame.Cmd, ErrorFlag)
-		err = writer.EndWrite()
-		if err != nil {
+		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
+		err := writer.EndWrite()
+		if err != nil && err != ErrWriteAfterCloseSelf {
 			sc.Close()
 			return
 		}
-
 	}
 
 }
@@ -182,7 +179,7 @@ type readFrameResult struct {
 }
 
 type writeFrameRequest struct {
-	frame  []byte
+	dfw    *defaultFrameWriter
 	result chan error
 }
 
@@ -203,7 +200,7 @@ func (sc *serveconn) readFrames() (err error) {
 	gateDone := gate.Done
 
 	for {
-		req, err := sc.reader.ReadFrame()
+		req, err := sc.reader.ReadFrame(sc.cs)
 		if err != nil {
 			return err
 		}
@@ -229,7 +226,20 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 	for {
 		select {
 		case res := <-sc.writeFrameCh:
-			_, err := writer.Write(res.frame)
+			dfw := res.dfw
+			flags := dfw.Flags()
+			requestID := dfw.RequestID()
+
+			// skip stream logic if PushFlag set
+			if !flags.IsPush() {
+				s := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			_, err := writer.Write(dfw.GetWbuf())
 			if err != nil {
 				sc.Close()
 			}
@@ -258,6 +268,7 @@ func (sc *serveconn) closeUntracked() error {
 		return err
 	}
 	sc.cancelCtx()
+	sc.cs.Wait()
 
 	return nil
 }

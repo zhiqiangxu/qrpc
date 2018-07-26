@@ -8,10 +8,10 @@ import (
 // all fields are readly only
 type Frame struct {
 	RequestID uint64
-	Flags     PacketFlag
+	Flags     FrameFlag
 	Cmd       Cmd
 	Payload   []byte
-	frameCh   chan *Frame // non nil for the first frame in stream
+	Stream    *stream // non nil for the first frame in stream
 
 	// ctx is either the client or server context. It should only
 	// be modified via copying the whole Request using WithContext.
@@ -22,7 +22,7 @@ type Frame struct {
 
 // FrameCh get the next frame ch
 func (r *Frame) FrameCh() <-chan *Frame {
-	return r.frameCh
+	return r.Stream.frameCh
 }
 
 // Context returns the request's context. To change the context, use
@@ -34,8 +34,8 @@ func (r *Frame) FrameCh() <-chan *Frame {
 // For outgoing client requests, the context controls cancelation.
 //
 // For incoming server requests, the context is canceled when the
-// client's connection closes, the request is canceled (with HTTP/2),
-// or when the ServeHTTP method returns.
+// client's connection closes, the request is canceled ,
+// or when the ServeQRPC method returns. (TODO)
 func (r *Frame) Context() context.Context {
 	if r.ctx != nil {
 		return r.ctx

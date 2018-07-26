@@ -9,10 +9,15 @@ import (
 	"time"
 )
 
+var (
+	// ErrWriteAfterCloseSelf when try to write after closeself
+	ErrWriteAfterCloseSelf = errors.New("write after closeself")
+)
+
 // FrameWriter looks like writes a qrpc resp
 // but it internally needs be scheduled, thus maintains a simple yet powerful interface
 type FrameWriter interface {
-	StartWrite(requestID uint64, cmd Cmd, flags PacketFlag)
+	StartWrite(requestID uint64, cmd Cmd, flags FrameFlag)
 	WriteBytes(v []byte) // v is copied in WriteBytes
 	EndWrite() error     // block until scheduled
 }
@@ -175,7 +180,7 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				srv.logf("http: Accept error: %v; retrying in %v", e, tempDelay)
+				srv.logf("qrpc: Accept error: %v; retrying in %v", e, tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			}
@@ -223,6 +228,7 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 		rwc:          rwc,
 		idx:          idx,
 		untrackedCh:  make(chan struct{}),
+		cs:           newConnStreams(),
 		readFrameCh:  make(chan readFrameResult),
 		writeFrameCh: make(chan writeFrameRequest)}
 

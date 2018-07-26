@@ -31,6 +31,8 @@ type Connection struct {
 
 	mu     sync.Mutex
 	respes map[uint64]*response
+
+	cs *connstreams
 }
 
 // Response for response frames
@@ -82,7 +84,8 @@ func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f S
 
 	c := &Connection{
 		Conn: conn, conf: conf, subscriber: f, p: p,
-		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response)}
+		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
+		cs: newConnStreams()}
 
 	if p == nil {
 		c.wakeup()
@@ -124,6 +127,7 @@ func (conn *Connection) GetWriter() FrameWriter {
 
 // StreamWriter is returned by StreamRequest
 type StreamWriter interface {
+	RequestID() uint64
 	StartWrite(cmd Cmd)
 	WriteBytes(v []byte)     // v is copied in WriteBytes
 	EndWrite(end bool) error // block until scheduled
@@ -132,11 +136,11 @@ type StreamWriter interface {
 type defaultStreamWriter struct {
 	w         *defaultFrameWriter
 	requestID uint64
-	flags     PacketFlag
+	flags     FrameFlag
 }
 
 // NewStreamWriter creates a streamwriter from StreamWriter
-func NewStreamWriter(w FrameWriter, requestID uint64, flags PacketFlag) StreamWriter {
+func NewStreamWriter(w FrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
 	dfr, ok := w.(*defaultFrameWriter)
 	if !ok {
 		return nil
@@ -144,12 +148,16 @@ func NewStreamWriter(w FrameWriter, requestID uint64, flags PacketFlag) StreamWr
 	return newStreamWriter(dfr, requestID, flags)
 }
 
-func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags PacketFlag) StreamWriter {
+func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
 	return &defaultStreamWriter{w: w, requestID: requestID, flags: flags}
 }
 
 func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
 	dsw.w.StartWrite(dsw.requestID, cmd, dsw.flags)
+}
+
+func (dsw *defaultStreamWriter) RequestID() uint64 {
+	return dsw.requestID
 }
 
 func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
@@ -161,9 +169,9 @@ func (dsw *defaultStreamWriter) EndWrite(end bool) error {
 }
 
 // StreamRequest is for streamed request
-func (conn *Connection) StreamRequest(cmd Cmd, flags PacketFlag, payload []byte) (Response, StreamWriter, error) {
+func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (Response, StreamWriter, error) {
 
-	flags |= StreamFlag | NBFlag
+	flags = flags.ToStream()
 	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
 		return nil, nil, err
@@ -171,10 +179,18 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags PacketFlag, payload []byte)
 	return resp, newStreamWriter(writer, requestID, flags), nil
 }
 
-// Request send a request frame and returns response frame
-// error is non nil when write failed
-func (conn *Connection) Request(cmd Cmd, flags PacketFlag, payload []byte) (Response, error) {
+// ResetStream resets a stream
+func (conn *Connection) ResetStream(requestID uint64) error {
+	writer := conn.GetWriter()
+	writer.StartWrite(requestID, 0, StreamRstFlag)
+	return writer.EndWrite()
+}
 
+// Request send a nonstreamed request frame and returns response frame
+// error is non nil when write failed
+func (conn *Connection) Request(cmd Cmd, flags FrameFlag, payload []byte) (Response, error) {
+
+	flags = flags.ToNonStream()
 	_, resp, _, err := conn.writeFirstFrame(cmd, flags, payload)
 
 	return resp, err
@@ -185,7 +201,7 @@ var (
 	ErrNoNewUUID = errors.New("no new uuid available temporary")
 )
 
-func (conn *Connection) writeFirstFrame(cmd Cmd, flags PacketFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
+func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
 	var (
 		requestID uint64
 		suc       bool
@@ -261,6 +277,7 @@ func (conn *Connection) Close(err error) error {
 	}
 
 	conn.cancelCtx()
+	conn.cs.Wait()
 
 	var fatal bool
 	if !(err == context.Canceled || err == context.DeadlineExceeded) {
@@ -287,12 +304,12 @@ func (conn *Connection) readFrames() {
 		conn.Close(err)
 	}()
 	for {
-		frame, err = conn.reader.ReadFrame()
+		frame, err = conn.reader.ReadFrame(conn.cs)
 		if err != nil {
 			return
 		}
 
-		if frame.Flags&PushFlag != 0 {
+		if frame.Flags.IsPush() {
 			// pushed frame
 			if conn.subscriber != nil {
 				conn.subscriber(conn, frame)
@@ -326,7 +343,20 @@ func (conn *Connection) writeFrames() (err error) {
 	for {
 		select {
 		case res := <-conn.writeFrameCh:
-			_, err := writer.Write(res.frame)
+			dfw := res.dfw
+			flags := dfw.Flags()
+			requestID := dfw.RequestID()
+
+			// skip stream logic if PushFlag set
+			if !flags.IsPush() {
+				s := conn.cs.CreateOrGetStream(conn.ctx, requestID, flags)
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			_, err := writer.Write(dfw.GetWbuf())
 			res.result <- err
 			if err != nil {
 				return err

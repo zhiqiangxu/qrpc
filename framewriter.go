@@ -7,9 +7,12 @@ import (
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	writeCh chan<- writeFrameRequest
-	wbuf    []byte
-	ctx     context.Context
+	writeCh   chan<- writeFrameRequest
+	wbuf      []byte
+	requestID uint64
+	cmd       Cmd
+	flags     FrameFlag
+	ctx       context.Context
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames
@@ -18,9 +21,11 @@ func newFrameWriter(ctx context.Context, writeCh chan<- writeFrameRequest) *defa
 }
 
 // StartWrite Write the FrameHeader.
-func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags PacketFlag) {
+func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags FrameFlag) {
 
-	// Write the FrameHeader.
+	dfw.requestID = requestID
+	dfw.cmd = cmd
+	dfw.flags = flags
 	dfw.wbuf = append(dfw.wbuf[:0],
 		0, // 4 bytes of length, filled in in endWrite
 		0,
@@ -38,10 +43,24 @@ func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags Packe
 		byte(cmd>>16),
 		byte(cmd>>8),
 		byte(cmd))
+
+}
+
+func (dfw *defaultFrameWriter) RequestID() uint64 {
+	return dfw.requestID
+}
+
+func (dfw *defaultFrameWriter) Flags() FrameFlag {
+	return dfw.flags
+}
+
+func (dfw *defaultFrameWriter) GetWbuf() []byte {
+	return dfw.wbuf
 }
 
 // EndWrite finishes write frame
 func (dfw *defaultFrameWriter) EndWrite() error {
+
 	length := len(dfw.wbuf) - 4
 	_ = append(dfw.wbuf[:0],
 		byte(length>>24),
@@ -49,7 +68,7 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 		byte(length>>8),
 		byte(length))
 
-	wfr := writeFrameRequest{frame: dfw.wbuf, result: make(chan error)}
+	wfr := writeFrameRequest{dfw: dfw, result: make(chan error)}
 	select {
 	case dfw.writeCh <- wfr:
 	case <-dfw.ctx.Done():
@@ -66,7 +85,7 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
 	if end {
-		dfw.wbuf[12] |= byte(StreamEndFlag)
+		dfw.flags = dfw.flags.ToEndStream()
 	}
 	return dfw.EndWrite()
 }

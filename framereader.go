@@ -5,18 +5,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
-	"sync"
 )
 
 // defaultFrameReader is responsible for read frames
 // should create one instance per connection
 type defaultFrameReader struct {
 	*Reader
-	rbuf          [16]byte // for header
-	streamFrameCh map[uint64]chan *Frame
-	ctx           context.Context
-	mu            sync.Mutex
-	doneStreams   []uint64
+	rbuf [16]byte // for header
+	ctx  context.Context
 }
 
 // newFrameReader creates a FrameWriter instance to read frames
@@ -27,83 +23,35 @@ func newFrameReader(ctx context.Context, rwc net.Conn, timeout int) *defaultFram
 var (
 	// ErrInvalidFrameSize when invalid size
 	ErrInvalidFrameSize = errors.New("invalid frame size")
-	// ErrStreamFrameMustNB when stream frame not non block
-	ErrStreamFrameMustNB = errors.New("streaming frame must be non block")
 )
 
-func (dfr *defaultFrameReader) ReadFrame() (*Frame, error) {
-
-	dfr.closeStreams()
+func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
 
 	f, err := dfr.readFrame()
 	if err != nil {
-		dfr.shutdown()
 		return f, err
 	}
 
 	requestID := f.RequestID
 	flags := f.Flags
 
-	// done for non streamed frame
-	if flags&StreamFlag == 0 {
-		return f, nil
-	}
+	// ReadFrame is not threadsafe, so below need not be atomic
 
-	// deal with streamed frames
+	for {
+		s := cs.CreateOrGetStream(dfr.ctx, requestID, f.Flags)
 
-	if flags&NBFlag == 0 {
-		return nil, ErrStreamFrameMustNB
-	}
-
-	if flags&StreamEndFlag == 0 {
-		if dfr.streamFrameCh == nil {
-			// the first stream for the connection
-			dfr.streamFrameCh = make(map[uint64]chan *Frame)
+		if s.TryBind(f) {
+			return f, nil
 		}
-		ch, ok := dfr.streamFrameCh[requestID]
+		ok := s.AddInFrame(f)
 		if !ok {
-			// the first frame for the stream
-			ch = make(chan *Frame)
-			dfr.streamFrameCh[requestID] = ch
-			f.frameCh = ch
-			return f, nil
-		}
-
-		// continuation frame for the stream
-		select {
-		case ch <- f:
-			return dfr.ReadFrame()
-		case <-dfr.ctx.Done():
-			return nil, dfr.ctx.Err()
-		}
-	} else {
-		// the ending frame of the stream
-		if dfr.streamFrameCh == nil {
-			// ending frame with no prior stream frames
-			return f, nil
-		}
-		ch, ok := dfr.streamFrameCh[requestID]
-		if !ok {
-			// ending frame with no prior stream frames
-			return f, nil
-		}
-		// ending frame for the stream
-		select {
-		case ch <- f:
-			close(ch)
-			delete(dfr.streamFrameCh, requestID)
-			return dfr.ReadFrame()
-		case <-dfr.ctx.Done():
-			return nil, dfr.ctx.Err()
+			<-s.Done()
+			cs.DeleteStream(s, flags&PushFlag != 0)
 		}
 	}
+
 }
 
-func (dfr *defaultFrameReader) shutdown() {
-	for _, ch := range dfr.streamFrameCh {
-		close(ch)
-	}
-}
 func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	header := dfr.rbuf[:]
@@ -116,7 +64,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	requestID := binary.BigEndian.Uint64(header[4:])
 	cmdAndFlags := binary.BigEndian.Uint32(header[12:])
 	cmd := Cmd(cmdAndFlags & 0xffffff)
-	flags := PacketFlag(cmdAndFlags >> 24)
+	flags := FrameFlag(cmdAndFlags >> 24)
 	if size < 12 {
 		return nil, ErrInvalidFrameSize
 	}
@@ -128,23 +76,4 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	}
 
 	return &Frame{RequestID: requestID, Cmd: cmd, Flags: flags, Payload: payload, ctx: dfr.ctx}, nil
-}
-
-func (dfr *defaultFrameReader) CloseStream(requestID uint64) {
-	dfr.mu.Lock()
-	dfr.doneStreams = append(dfr.doneStreams, requestID)
-	dfr.mu.Unlock()
-}
-
-func (dfr *defaultFrameReader) closeStreams() {
-	dfr.mu.Lock()
-	for _, requestID := range dfr.doneStreams {
-		ch, ok := dfr.streamFrameCh[requestID]
-		if !ok {
-			continue
-		}
-		close(ch)
-		delete(dfr.streamFrameCh, requestID)
-	}
-	dfr.mu.Unlock()
 }

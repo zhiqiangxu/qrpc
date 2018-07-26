@@ -25,7 +25,7 @@ func TestHelloWorld(t *testing.T) {
 		fmt.Println(frame)
 	})
 
-	for _, flag := range []qrpc.PacketFlag{0, qrpc.NBFlag} {
+	for _, flag := range []qrpc.FrameFlag{0, qrpc.NBFlag} {
 		resp, err := conn.Request(HelloCmd, flag, []byte("xu"))
 		if err != nil {
 			panic(err)
