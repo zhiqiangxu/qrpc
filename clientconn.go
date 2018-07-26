@@ -179,21 +179,14 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) 
 	return resp, newStreamWriter(writer, requestID, flags), nil
 }
 
-// ResetStream resets a stream
-func (conn *Connection) ResetStream(requestID uint64) error {
-	writer := conn.GetWriter()
-	writer.StartWrite(requestID, 0, StreamRstFlag)
-	return writer.EndWrite()
-}
-
 // Request send a nonstreamed request frame and returns response frame
 // error is non nil when write failed
-func (conn *Connection) Request(cmd Cmd, flags FrameFlag, payload []byte) (Response, error) {
+func (conn *Connection) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, error) {
 
 	flags = flags.ToNonStream()
-	_, resp, _, err := conn.writeFirstFrame(cmd, flags, payload)
+	requestID, resp, _, err := conn.writeFirstFrame(cmd, flags, payload)
 
-	return resp, err
+	return requestID, resp, err
 }
 
 var (
@@ -347,8 +340,18 @@ func (conn *Connection) writeFrames() (err error) {
 			flags := dfw.Flags()
 			requestID := dfw.RequestID()
 
-			// skip stream logic if PushFlag set
-			if !flags.IsPush() {
+			if flags.IsRst() {
+				s := conn.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrRstNonExistingStream
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s := conn.cs.CreateOrGetStream(conn.ctx, requestID, flags)
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf

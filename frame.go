@@ -70,8 +70,7 @@ func (r *RequestFrame) ConnectionInfo() *ConnectionInfo {
 func (r *RequestFrame) Close() error {
 
 	ci := r.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.SC.Close()
-	return nil
+	return ci.SC.GetWriter().ResetFrame(r.RequestID, 0)
 }
 
 // Context for RequestFrame

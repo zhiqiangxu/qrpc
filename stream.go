@@ -24,6 +24,27 @@ func (cs *connstreams) Wait() {
 	cs.wg.Wait()
 }
 
+// GetStream tries to get the associated stream, called by framereader for rst frame
+func (cs *connstreams) GetStream(requestID uint64, flags FrameFlag) *stream {
+	if flags.IsPush() {
+		s, ok := cs.pushstreams[requestID]
+		if ok {
+			return s
+		}
+
+		return nil
+	}
+
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	s, ok := cs.streams[requestID]
+	if ok {
+		return s
+	}
+
+	return nil
+}
+
 // get or create the associated stream atomically
 // if PushFlag is set, should only call CreateOrGetStream if caller is framereader
 func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) *stream {
@@ -144,12 +165,13 @@ func (s *stream) AddInFrame(frame *Frame) bool {
 		return false
 	}
 
-	s.closePeerIfNeeded(frame.Flags)
-
 	s.mu.Unlock()
 
 	select {
 	case s.frameCh <- frame:
+		s.mu.Lock()
+		s.closePeerIfNeeded(frame.Flags)
+		s.mu.Unlock()
 		return true
 	case <-s.ctx.Done():
 		return false
@@ -178,11 +200,25 @@ func (s *stream) closePeerIfNeeded(flags FrameFlag) {
 // return value means whether accepted by stream
 // if not accepted, framewriter should throw away the frame
 // if accepted, framewriter can go ahead actually sending the frame
+// for rst frame, return false mean there's no need to send rst frame
 func (s *stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 
+	isRst := flags.IsRst()
+
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if isRst {
+		s.closedSelf = true
+		if s.closedPeer {
+			s.reset()
+			return false
+		}
+		return true
+	}
+
 	if s.closedSelf {
-		s.mu.Unlock()
+
 		return false
 	}
 
@@ -192,9 +228,16 @@ func (s *stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 			s.reset()
 		}
 	}
-	s.mu.Unlock()
 
 	return true
+}
+
+func (s *stream) ResetByPeer() {
+	s.mu.Lock()
+	s.closedPeer = true
+	s.mu.Unlock()
+
+	s.reset()
 }
 
 func (s *stream) reset() {

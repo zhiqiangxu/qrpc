@@ -90,6 +90,11 @@ func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
 	return dfw.EndWrite()
 }
 
+func (dfw *defaultFrameWriter) ResetFrame(requestID uint64, reason Cmd) error {
+	dfw.StartWrite(requestID, reason, StreamRstFlag)
+	return dfw.EndWrite()
+}
+
 // WriteUint64 write uint64 to wbuf
 func (dfw *defaultFrameWriter) WriteUint64(v uint64) {
 	dfw.wbuf = append(dfw.wbuf, byte(v>>56), byte(v>>48), byte(v>>40), byte(v>>32), byte(v>>24), byte(v>>16), byte(v>>8), byte(v))

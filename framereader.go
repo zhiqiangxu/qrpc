@@ -25,8 +25,9 @@ var (
 	ErrInvalidFrameSize = errors.New("invalid frame size")
 )
 
+// ReadFrame will only return the first frame in stream
 func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
-
+start:
 	f, err := dfr.readFrame()
 	if err != nil {
 		return f, err
@@ -38,7 +39,18 @@ func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
 	// ReadFrame is not threadsafe, so below need not be atomic
 
 	for {
-		s := cs.CreateOrGetStream(dfr.ctx, requestID, f.Flags)
+
+		// handle Rst
+		if flags.IsRst() {
+
+			s := cs.GetStream(requestID, flags)
+			if s != nil {
+				s.ResetByPeer()
+			}
+
+			goto start
+		}
+		s := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 
 		if s.TryBind(f) {
 			return f, nil
@@ -48,6 +60,8 @@ func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
 			<-s.Done()
 			cs.DeleteStream(s, flags&PushFlag != 0)
 		}
+
+		goto start
 	}
 
 }

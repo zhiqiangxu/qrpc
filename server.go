@@ -12,6 +12,8 @@ import (
 var (
 	// ErrWriteAfterCloseSelf when try to write after closeself
 	ErrWriteAfterCloseSelf = errors.New("write after closeself")
+	// ErrRstNonExistingStream when reset non existing stream
+	ErrRstNonExistingStream = errors.New("reset non existing stream")
 )
 
 // FrameWriter looks like writes a qrpc resp
@@ -20,6 +22,8 @@ type FrameWriter interface {
 	StartWrite(requestID uint64, cmd Cmd, flags FrameFlag)
 	WriteBytes(v []byte) // v is copied in WriteBytes
 	EndWrite() error     // block until scheduled
+
+	ResetFrame(requestID uint64, reason Cmd) error
 }
 
 // A Handler responds to an qrpc request.

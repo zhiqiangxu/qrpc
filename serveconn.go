@@ -230,8 +230,18 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			flags := dfw.Flags()
 			requestID := dfw.RequestID()
 
-			// skip stream logic if PushFlag set
-			if !flags.IsPush() {
+			if flags.IsRst() {
+				s := sc.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
