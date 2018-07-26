@@ -233,7 +233,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			if flags.IsRst() {
 				s := sc.cs.GetStream(requestID, flags)
 				if s == nil {
-					res.result <- ErrWriteAfterCloseSelf
+					res.result <- ErrRstNonExistingStream
 					break
 				}
 				// for rst frame, AddOutFrame returns false when no need to send the frame

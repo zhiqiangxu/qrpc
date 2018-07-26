@@ -76,8 +76,12 @@ func TestCancel(t *testing.T) {
 		fmt.Println(frame)
 	})
 
-	requestID, resp, err := conn.Request(HelloCmd, 0, []byte("xu"))
+	requestID, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+	if err != nil {
+		panic(err)
+	}
 
+	fmt.Println("requestID", requestID)
 	err = conn.GetWriter().ResetFrame(requestID, 0)
 	if err != nil {
 		panic(err)
