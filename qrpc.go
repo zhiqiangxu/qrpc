@@ -11,7 +11,7 @@ const (
 	StreamFlag FrameFlag = 1 << iota
 	// StreamEndFlag denotes the end of a stream
 	StreamEndFlag
-	// StreamRstFlag is sent to request cancellation of a stream or to indicate that an error condition has occurred (TODO)
+	// StreamRstFlag is sent to request cancellation of a stream or to indicate that an error condition has occurred
 	StreamRstFlag
 	// NBFlag means it should be handled nonblockingly, it's implied for streamed frames
 	NBFlag
