@@ -243,3 +243,6 @@ To handle `pushed` message, the relevant change at `client` side is:
 +        fmt.Println(pushedFrame)
 +    })
 ```
+
+
+There are even more features like `StreamRstFlag`!
