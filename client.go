@@ -29,6 +29,7 @@ func (cli *Client) GetConn(addr string, f func(*Connection, *Frame)) *Connection
 
 			conn, err := newConnectionWithPool(addr, cli.conf, p, SubFunc(f))
 			if err != nil {
+				logError("newConnectionWithPool", err)
 				return nil
 			}
 

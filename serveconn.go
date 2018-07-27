@@ -82,7 +82,7 @@ func (sc *serveconn) serve(ctx context.Context) {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			sc.server.logf("qrpc: panic serving %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
+			logError("connection panic", sc.rwc.RemoteAddr().String(), err, buf)
 		}
 		sc.Close()
 	}()
@@ -130,7 +130,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		sc.server.logf("qrpc: handleRequestPanic %v: %v\n%s", sc.rwc.RemoteAddr().String(), err, buf)
+		logError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, buf)
 	}
 
 	s := frame.Stream
@@ -139,9 +139,8 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
 		writer := sc.GetWriter()
 		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
 		err := writer.EndWrite()
-		if err != nil && err != ErrWriteAfterCloseSelf {
-			sc.Close()
-			return
+		if err != nil {
+			logError("send error frame", err)
 		}
 	}
 
@@ -193,6 +192,7 @@ func (sc *serveconn) readFrames() (err error) {
 	ctx := sc.ctx
 	defer func() {
 		if err != nil {
+			logError("readFrames", err)
 			sc.Close()
 		}
 	}()
@@ -251,6 +251,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 
 			_, err := writer.Write(dfw.GetWbuf())
 			if err != nil {
+				logError("serveconn Write", err)
 				sc.Close()
 			}
 			res.result <- err

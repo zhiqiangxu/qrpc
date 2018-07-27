@@ -75,6 +75,7 @@ func NewConnection(addr string, conf ConnectionConfig, f func(*Connection, *Fram
 func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f SubFunc) (*Connection, error) {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
+		logError("Dial", err)
 		return nil, err
 	}
 
@@ -174,6 +175,7 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) 
 	flags = flags.ToStream()
 	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
+		logError("writeFirstFrame", err)
 		return nil, nil, err
 	}
 	return newStreamWriter(writer, requestID, flags), resp, nil
@@ -362,6 +364,7 @@ func (conn *Connection) writeFrames() (err error) {
 			_, err := writer.Write(dfw.GetWbuf())
 			res.result <- err
 			if err != nil {
+				logError("clientconn Write", err)
 				return err
 			}
 		case <-conn.ctx.Done():
