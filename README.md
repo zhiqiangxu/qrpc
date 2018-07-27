@@ -15,7 +15,7 @@ By default each frame is `blocking` and `nonstreaming`, this allows traditional 
 ## blocking mode
 
 ### `server.go`:
-```
+```golang
 package main
 import "github.com/zhiqiangxu/qrpc"
 
@@ -41,7 +41,7 @@ func main() {
 
 ### `client.go`:
 
-```
+```golang
 package main
 import (
     "fmt"
@@ -82,7 +82,7 @@ In this mode `request` frames will be processed concurrently!
 
 ### `streamclient.go`:
 
-```
+```golang
 package main
 import (
     "fmt"
@@ -109,7 +109,7 @@ func main() {
 ```
 
 ### `streamserver.go`:
-```
+```golang
 package main
 import (
     "github.com/zhiqiangxu/qrpc"
@@ -148,7 +148,7 @@ func main() {
 
 In a similar fasion we can also make `response` in `stream` mode:
 
-```
+```golang
 package main
 import (
     "github.com/zhiqiangxu/qrpc"
@@ -191,7 +191,7 @@ func main() {
 The key is `StreamFlag`!
 
 ## push mode
-```
+```golang
 package main
 import (
     "github.com/zhiqiangxu/qrpc"
