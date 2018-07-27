@@ -67,6 +67,7 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 		byte(length>>16),
 		byte(length>>8),
 		byte(length))
+	_ = append(dfw.wbuf[:12], byte(dfw.flags)) // flags may be changed by StreamWriter
 
 	wfr := writeFrameRequest{dfw: dfw, result: make(chan error)}
 	select {

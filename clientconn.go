@@ -169,14 +169,14 @@ func (dsw *defaultStreamWriter) EndWrite(end bool) error {
 }
 
 // StreamRequest is for streamed request
-func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (Response, StreamWriter, error) {
+func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error) {
 
 	flags = flags.ToStream()
 	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	return resp, newStreamWriter(writer, requestID, flags), nil
+	return newStreamWriter(writer, requestID, flags), resp, nil
 }
 
 // Request send a nonstreamed request frame and returns response frame

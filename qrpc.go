@@ -28,7 +28,7 @@ func (flg FrameFlag) ToNonStream() FrameFlag {
 
 // ToStream convert flg to streamed flag
 func (flg FrameFlag) ToStream() FrameFlag {
-	return flg & StreamFlag
+	return flg | StreamFlag
 }
 
 // ToEndStream set StreamEndFlag on
