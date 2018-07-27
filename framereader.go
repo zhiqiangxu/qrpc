@@ -30,7 +30,6 @@ func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
 start:
 	f, err := dfr.readFrame()
 	if err != nil {
-		logError("readFrame", err)
 		return f, err
 	}
 

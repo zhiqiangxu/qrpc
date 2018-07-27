@@ -192,7 +192,6 @@ func (sc *serveconn) readFrames() (err error) {
 	ctx := sc.ctx
 	defer func() {
 		if err != nil {
-			logError("readFrames", err)
 			sc.Close()
 		}
 	}()
