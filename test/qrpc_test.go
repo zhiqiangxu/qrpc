@@ -2,6 +2,8 @@ package test
 
 import (
 	"fmt"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,6 +93,38 @@ func TestCancel(t *testing.T) {
 		panic("nil frame")
 	}
 	fmt.Println("resp is ", string(frame.Payload))
+
+}
+
+func TestPerformance(t *testing.T) {
+
+	go startServer()
+	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
+	if err != nil {
+		panic(err)
+	}
+	i := 0
+	var wg sync.WaitGroup
+	startTime := time.Now()
+	for {
+		_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+		if err != nil {
+			panic(err)
+		}
+		if i > 100000 {
+			break
+		}
+		qrpc.GoFunc(&wg, func() {
+			frame := resp.GetFrame()
+			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+				panic("fail")
+			}
+		})
+		i++
+	}
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println("10000 request took", endTime.Sub(startTime))
 
 }
 
