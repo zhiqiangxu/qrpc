@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/zhiqiangxu/qrpc"
+	"google.golang.org/grpc"
+	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
 const (
@@ -137,10 +140,8 @@ func TestHTTPPerformance(t *testing.T) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "hello world xu")
 	})
-
 	go srv.ListenAndServe()
 	time.Sleep(time.Second * 2)
-
 	i := 0
 	var wg sync.WaitGroup
 	startTime := time.Now()
@@ -169,6 +170,28 @@ func TestHTTPPerformance(t *testing.T) {
 	wg.Wait()
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
+}
+
+func TestGRPCPerformance(t *testing.T) {
+	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+	if err != nil {
+		panic(err)
+	}
+	c := pb.NewGreeterClient(conn)
+	name := "xu"
+	i := 0
+	for {
+		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
+		if err != nil {
+			panic(err)
+		}
+		i++
+
+		if i > n {
+			break
+		}
+	}
+
 }
 
 const (
