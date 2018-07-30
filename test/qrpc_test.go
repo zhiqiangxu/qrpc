@@ -13,7 +13,7 @@ const (
 )
 
 // TestConnection tests connection
-func TestHelloWorld(t *testing.T) {
+func TestNonStream(t *testing.T) {
 
 	go startServer()
 	time.Sleep(time.Second * 2)
@@ -39,7 +39,7 @@ func TestHelloWorld(t *testing.T) {
 
 }
 
-func TestWriter(t *testing.T) {
+func TestNBWriter(t *testing.T) {
 
 	go startServer()
 	time.Sleep(time.Second * 2)

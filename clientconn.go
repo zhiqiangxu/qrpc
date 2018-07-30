@@ -30,6 +30,7 @@ type Connection struct {
 	wg  sync.WaitGroup // wait group for goroutines
 
 	mu     sync.Mutex
+	closed bool
 	respes map[uint64]*response
 
 	cs *connstreams
@@ -97,6 +98,9 @@ func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f S
 
 // called internally when using pool
 func (conn *Connection) wakeup() {
+	if conn.closed {
+		conn.closed = false
+	}
 	conn.ctx, conn.cancelCtx = context.WithCancel(conn.conf.Ctx)
 	conn.reader = newFrameReader(conn.ctx, conn.Conn, conn.conf.ReadTimeout)
 
@@ -234,6 +238,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 
 	if err != nil {
 		conn.mu.Lock()
+		resp.Close()
 		delete(conn.respes, requestID)
 		conn.mu.Unlock()
 		return 0, nil, nil, err
@@ -262,14 +267,15 @@ func (conn *Connection) Close(err error) error {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
-	if conn.subscriber == nil {
+	if conn.closed {
 		return ErrConnAlreadyClosed
 	}
 
-	conn.subscriber = nil
+	conn.closed = true
 	for _, v := range conn.respes {
 		v.Close()
 	}
+	conn.respes = make(map[uint64]*response)
 
 	conn.cancelCtx()
 	conn.cs.Wait()
@@ -278,7 +284,7 @@ func (conn *Connection) Close(err error) error {
 	if !(err == context.Canceled || err == context.DeadlineExceeded) {
 		fatal = true
 	}
-	conn.respes = make(map[uint64]*response)
+
 	if conn.p != nil && !fatal {
 		conn.suspend()
 		conn.p.Put(conn)
