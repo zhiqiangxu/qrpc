@@ -179,6 +179,7 @@ func TestGRPCPerformance(t *testing.T) {
 	}
 	c := pb.NewGreeterClient(conn)
 	name := "xu"
+	startTime := time.Now()
 	i := 0
 	for {
 		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
@@ -191,7 +192,8 @@ func TestGRPCPerformance(t *testing.T) {
 			break
 		}
 	}
-
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
 const (
