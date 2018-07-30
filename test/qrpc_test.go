@@ -2,6 +2,9 @@ package test
 
 import (
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
 	"reflect"
 	"sync"
 	"testing"
@@ -12,6 +15,7 @@ import (
 
 const (
 	addr = "0.0.0.0:8081"
+	n    = 100000
 )
 
 // TestConnection tests connection
@@ -111,7 +115,7 @@ func TestPerformance(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		if i > 100000 {
+		if i > n {
 			break
 		}
 		qrpc.GoFunc(&wg, func() {
@@ -124,8 +128,47 @@ func TestPerformance(t *testing.T) {
 	}
 	wg.Wait()
 	endTime := time.Now()
-	fmt.Println("10000 request took", endTime.Sub(startTime))
+	fmt.Println(n, "request took", endTime.Sub(startTime))
 
+}
+
+func TestHTTPPerformance(t *testing.T) {
+	srv := &http.Server{Addr: addr}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "hello world xu")
+	})
+
+	go srv.ListenAndServe()
+	time.Sleep(time.Second * 2)
+
+	i := 0
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	for {
+		resp, err := http.Get("http://" + addr)
+		if err != nil {
+			panic(err)
+		}
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic(err)
+		}
+		if !reflect.DeepEqual(body, []byte("hello world xu")) {
+			panic("fail")
+		}
+		resp.Body.Close()
+		if err != nil {
+			panic(err)
+		}
+		if i > n {
+			break
+		}
+		i++
+	}
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
 const (
