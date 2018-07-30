@@ -1,7 +1,6 @@
 package test
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	"github.com/zhiqiangxu/qrpc"
-	"google.golang.org/grpc"
-	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
 const (
@@ -172,29 +169,29 @@ func TestHTTPPerformance(t *testing.T) {
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
-func TestGRPCPerformance(t *testing.T) {
-	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
-	if err != nil {
-		panic(err)
-	}
-	c := pb.NewGreeterClient(conn)
-	name := "xu"
-	startTime := time.Now()
-	i := 0
-	for {
-		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
-		if err != nil {
-			panic(err)
-		}
-		i++
+// func TestGRPCPerformance(t *testing.T) {
+// 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	c := pb.NewGreeterClient(conn)
+// 	name := "xu"
+// 	startTime := time.Now()
+// 	i := 0
+// 	for {
+// 		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
+// 		if err != nil {
+// 			panic(err)
+// 		}
+// 		i++
 
-		if i > n {
-			break
-		}
-	}
-	endTime := time.Now()
-	fmt.Println(n, "request took", endTime.Sub(startTime))
-}
+// 		if i > n {
+// 			break
+// 		}
+// 	}
+// 	endTime := time.Now()
+// 	fmt.Println(n, "request took", endTime.Sub(startTime))
+// }
 
 const (
 	HelloCmd qrpc.Cmd = iota
