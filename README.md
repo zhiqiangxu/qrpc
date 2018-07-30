@@ -249,6 +249,6 @@ There are even more features like `StreamRstFlag`!
 
 ## Performance
 
-![avatar](https://github.com/zhiqiangxu/qrpc/blob/doc/performance.jpg)
+![avatar](https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/performance.jpg)
 
-About 4 times faster than http!
+About **4** times faster than http!
