@@ -1,6 +1,7 @@
 package qrpc
 
 import (
+	"bufio"
 	"context"
 	"encoding/binary"
 	"io"
@@ -11,6 +12,7 @@ import (
 // Reader read data from socket
 type Reader struct {
 	conn    net.Conn
+	reader  *bufio.Reader
 	timeout int
 	ctx     context.Context
 }
@@ -32,7 +34,8 @@ func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Read
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return &Reader{ctx: ctx, conn: conn, timeout: timeout}
+
+	return &Reader{ctx: ctx, conn: conn, reader: bufio.NewReader(conn), timeout: timeout}
 }
 
 // SetReadTimeout allows modify timeout for read
@@ -77,7 +80,7 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 		}
 
 		r.conn.SetReadDeadline(time.Now().Add(readTimeout))
-		n, err = io.ReadFull(r.conn, bytes[offset:])
+		n, err = io.ReadFull(r.reader, bytes[offset:])
 		offset += n
 		if err != nil {
 			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {

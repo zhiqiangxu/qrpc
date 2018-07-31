@@ -115,9 +115,7 @@ func TestPerformance(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		if i > n {
-			break
-		}
+
 		qrpc.GoFunc(&wg, func() {
 			frame := resp.GetFrame()
 			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
@@ -125,6 +123,9 @@ func TestPerformance(t *testing.T) {
 			}
 		})
 		i++
+		if i > n {
+			break
+		}
 	}
 	wg.Wait()
 	endTime := time.Now()
