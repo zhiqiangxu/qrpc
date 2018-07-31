@@ -7,23 +7,30 @@ import (
 	"net"
 )
 
+var (
+	// ErrInvalidFrameSize when invalid size
+	ErrInvalidFrameSize = errors.New("invalid frame size")
+	// ErrFrameTooLarge when frame size too large
+	ErrFrameTooLarge = errors.New("frame size too large")
+)
+
 // defaultFrameReader is responsible for read frames
 // should create one instance per connection
 type defaultFrameReader struct {
 	*Reader
-	rbuf [16]byte // for header
-	ctx  context.Context
+	rbuf         [16]byte // for header
+	ctx          context.Context
+	maxFrameSize int
 }
 
 // newFrameReader creates a FrameWriter instance to read frames
 func newFrameReader(ctx context.Context, rwc net.Conn, timeout int) *defaultFrameReader {
-	return &defaultFrameReader{Reader: NewReaderWithTimeout(ctx, rwc, timeout), ctx: ctx}
+	return newFrameReaderWithMFS(ctx, rwc, timeout, 0)
 }
 
-var (
-	// ErrInvalidFrameSize when invalid size
-	ErrInvalidFrameSize = errors.New("invalid frame size")
-)
+func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int, maxFrameSize int) *defaultFrameReader {
+	return &defaultFrameReader{Reader: NewReaderWithTimeout(ctx, rwc, timeout), ctx: ctx, maxFrameSize: maxFrameSize}
+}
 
 // ReadFrame will only return the first frame in stream
 func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
@@ -75,6 +82,9 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	}
 
 	size := binary.BigEndian.Uint32(header)
+	if dfr.maxFrameSize > 0 && size > uint32(dfr.maxFrameSize) {
+		return nil, ErrFrameTooLarge
+	}
 	requestID := binary.BigEndian.Uint64(header[4:])
 	cmdAndFlags := binary.BigEndian.Uint32(header[12:])
 	cmd := Cmd(cmdAndFlags & 0xffffff)

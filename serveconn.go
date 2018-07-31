@@ -8,6 +8,11 @@ import (
 	"sync"
 )
 
+const (
+	// DefaultMaxFrameSize is the max size for each request frame
+	DefaultMaxFrameSize = 10 * 1024 * 1024
+)
+
 // A serveconn represents the server side of an qrpc connection.
 type serveconn struct {
 	// server is the server on which the connection arrived.
@@ -88,7 +93,13 @@ func (sc *serveconn) serve(ctx context.Context) {
 	}()
 
 	binding := sc.server.bindings[idx]
-	sc.reader = newFrameReader(ctx, sc.rwc, binding.DefaultReadTimeout)
+	var maxFrameSize int
+	if binding.MaxFrameSize > 0 {
+		maxFrameSize = binding.MaxFrameSize
+	} else {
+		maxFrameSize = DefaultMaxFrameSize
+	}
+	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, maxFrameSize)
 	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
 	GoFunc(&sc.wg, func() {

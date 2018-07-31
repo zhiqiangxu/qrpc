@@ -10,6 +10,7 @@ type ServerBinding struct {
 	Handler             Handler // handler to invoke
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
+	MaxFrameSize        int
 }
 
 // SubFunc for subscribe callback
