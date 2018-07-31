@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 	"net"
-	"os"
-	"os/signal"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -124,10 +121,6 @@ func NewServer(bindings []ServerBinding) *Server {
 // ListenAndServe starts listening on all bindings
 func (srv *Server) ListenAndServe() error {
 
-	GoFunc(&srv.wg, func() {
-		srv.closeWhenSignal()
-	})
-
 	for idx, binding := range srv.bindings {
 		ln, err := net.Listen("tcp", binding.Addr)
 		if err != nil {
@@ -145,15 +138,6 @@ func (srv *Server) ListenAndServe() error {
 
 	srv.wg.Wait()
 	return nil
-}
-
-func (srv *Server) closeWhenSignal() {
-	quitChan := make(chan os.Signal, 1)
-	signal.Notify(quitChan, os.Interrupt, os.Kill, syscall.SIGTERM)
-
-	<-quitChan
-	logInfo("closeWhenSignal")
-	srv.Shutdown()
 }
 
 // ErrServerClosed is returned by the Server's Serve, ListenAndServe,
