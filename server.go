@@ -104,18 +104,22 @@ type Server struct {
 
 	wg sync.WaitGroup // wait group for goroutines
 
-	pushID uint64
+	pushID         uint64
+	activeConnN    []int64
+	maxActiveConnN []int64
 }
 
 // NewServer creates a server
 func NewServer(bindings []ServerBinding) *Server {
 	return &Server{
-		bindings:   bindings,
-		upTime:     time.Now(),
-		listeners:  make(map[net.Listener]struct{}),
-		doneChan:   make(chan struct{}),
-		id2Conn:    make([]sync.Map, len(bindings)),
-		activeConn: make([]sync.Map, len(bindings))}
+		bindings:       bindings,
+		upTime:         time.Now(),
+		listeners:      make(map[net.Listener]struct{}),
+		doneChan:       make(chan struct{}),
+		id2Conn:        make([]sync.Map, len(bindings)),
+		activeConn:     make([]sync.Map, len(bindings)),
+		activeConnN:    make([]int64, len(bindings)),
+		maxActiveConnN: make([]int64, len(bindings))}
 }
 
 // ListenAndServe starts listening on all bindings
@@ -237,6 +241,10 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 		writeFrameCh: make(chan writeFrameRequest)}
 
 	srv.activeConn[idx].Store(c, struct{}{})
+	n := atomic.AddInt64(&srv.activeConnN[idx], 1)
+	if n > srv.maxActiveConnN[idx] {
+		srv.maxActiveConnN[idx] = n
+	}
 	return c
 }
 
@@ -273,6 +281,7 @@ func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
 		srv.id2Conn[idx].Delete(sc.id)
 	}
 	srv.activeConn[idx].Delete(sc)
+	atomic.AddInt64(&srv.activeConnN[idx], -1)
 
 	close(sc.untrackedCh)
 	return true, sc.untrackedCh
