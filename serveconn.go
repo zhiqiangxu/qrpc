@@ -146,7 +146,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		logError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, buf)
+		logError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, string(buf))
 	}
 
 	s := frame.Stream
