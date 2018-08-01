@@ -248,6 +248,19 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 	return c
 }
 
+// RunTime returns runtime metrics
+func (srv *Server) RunTime(idx int) map[string]interface{} {
+
+	n := atomic.LoadInt64(&srv.activeConnN[idx])
+	maxN := atomic.LoadInt64(&srv.maxActiveConnN[idx])
+
+	result := make(map[string]interface{})
+	result["activeConnN"] = n
+	result["maxConnN"] = maxN
+
+	return result
+}
+
 // bindID bind the id to sc
 func (srv *Server) bindID(sc *serveconn, id string) {
 
