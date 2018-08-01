@@ -32,6 +32,7 @@ type serveconn struct {
 
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
 	untrackedCh chan struct{}
+	closeNotify []func()
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
@@ -58,6 +59,10 @@ type ConnectionInfo struct {
 // Server returns the server
 func (sc *serveconn) Server() *Server {
 	return sc.server
+}
+
+func (sc *serveconn) NotifyWhenClose(f func()) {
+	sc.closeNotify = append(sc.closeNotify, f)
 }
 
 // ReaderConfig for change timeout
@@ -291,5 +296,8 @@ func (sc *serveconn) closeUntracked() error {
 	sc.cancelCtx()
 	sc.cs.Wait()
 
+	for _, f := range sc.closeNotify {
+		f()
+	}
 	return nil
 }
