@@ -199,7 +199,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		suc       bool
 	)
 
-	requestID = poorManUUID()
+	requestID = PoorManUUID()
 	conn.mu.Lock()
 	i := 0
 	for {
@@ -213,7 +213,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		if i >= 3 {
 			break
 		}
-		requestID = poorManUUID()
+		requestID = PoorManUUID()
 	}
 
 	if !suc {
@@ -240,8 +240,8 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	return requestID, resp, writer, nil
 }
 
-// poorManUUID generate a uint64 uuid
-func poorManUUID() (result uint64) {
+// PoorManUUID generate a uint64 uuid
+func PoorManUUID() (result uint64) {
 	buf := make([]byte, 8)
 	rand.Read(buf)
 	result = binary.LittleEndian.Uint64(buf)
