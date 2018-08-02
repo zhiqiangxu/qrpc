@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/zhiqiangxu/qrpc"
 )
 
@@ -102,6 +104,12 @@ func TestCancel(t *testing.T) {
 
 func TestPerformance(t *testing.T) {
 
+	srv := &http.Server{Addr: "0.0.0.0:8888"}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "hello world xu")
+	})
+	go srv.ListenAndServe()
+
 	go startServer()
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
 	if err != nil {
@@ -128,8 +136,11 @@ func TestPerformance(t *testing.T) {
 		}
 	}
 	wg.Wait()
+	conn.Close(nil)
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
+
+	time.Sleep(time.Hour)
 
 }
 

@@ -113,18 +113,6 @@ func (conn *Connection) wakeup() {
 	})
 }
 
-// called internally when using pool
-func (conn *Connection) suspend() {
-
-	conn.cancelCtx()
-	conn.wg.Wait()
-}
-
-// Wait until closed by peer
-func (conn *Connection) Wait() {
-	conn.wg.Wait()
-}
-
 // GetWriter return a FrameWriter
 func (conn *Connection) GetWriter() FrameWriter {
 	return newFrameWriter(conn.ctx, conn.writeFrameCh)
@@ -286,7 +274,6 @@ func (conn *Connection) Close(err error) error {
 	}
 
 	if conn.p != nil && !fatal {
-		conn.suspend()
 		conn.p.Put(conn)
 		return nil
 	}
