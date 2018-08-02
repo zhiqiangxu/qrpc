@@ -113,6 +113,11 @@ func (conn *Connection) wakeup() {
 	})
 }
 
+// Wait block until clonsed
+func (conn *Connection) Wait() {
+	conn.wg.Wait()
+}
+
 // GetWriter return a FrameWriter
 func (conn *Connection) GetWriter() FrameWriter {
 	return newFrameWriter(conn.ctx, conn.writeFrameCh)
