@@ -2,6 +2,8 @@ package qrpc
 
 import (
 	"context"
+
+	"github.com/go-kit/kit/metrics"
 )
 
 // ServerBinding contains binding infos
@@ -11,6 +13,7 @@ type ServerBinding struct {
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
 	MaxFrameSize        int
+	LatencyMetric       metrics.Histogram
 }
 
 // SubFunc for subscribe callback

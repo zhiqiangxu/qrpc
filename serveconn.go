@@ -3,9 +3,12 @@ package qrpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"runtime"
+	"strconv"
 	"sync"
+	"time"
 )
 
 const (
@@ -124,14 +127,14 @@ func (sc *serveconn) serve(ctx context.Context) {
 
 			if !res.f.Flags.IsNonBlock() {
 				func() {
-					defer sc.handleRequestPanic(res.f)
+					defer sc.handleRequestPanic(res.f, time.Now())
 					handler.ServeQRPC(sc.writer, res.f)
 				}()
 				res.readMore()
 			} else {
 				res.readMore()
 				GoFunc(&sc.wg, func() {
-					defer sc.handleRequestPanic(res.f)
+					defer sc.handleRequestPanic(res.f, time.Now())
 					handler.ServeQRPC(sc.GetWriter(), res.f)
 				})
 			}
@@ -141,12 +144,29 @@ func (sc *serveconn) serve(ctx context.Context) {
 
 }
 
-func (sc *serveconn) handleRequestPanic(frame *RequestFrame) {
-	if err := recover(); err != nil {
+func (sc *serveconn) instrument(frame *RequestFrame, begin time.Time, err interface{}) {
+	binding := sc.server.bindings[sc.idx]
+	if binding.LatencyMetric == nil {
+		return
+	}
+
+	lvs := []string{"method", strconv.Itoa(int(frame.Cmd)), "error", fmt.Sprintf("%v", err)}
+
+	binding.LatencyMetric.With(lvs...).Observe(time.Since(begin).Seconds())
+
+}
+
+func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
+	err := recover()
+	sc.instrument(frame, begin, err)
+
+	if err != nil {
+
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
 		logError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, string(buf))
+
 	}
 
 	s := frame.Stream
