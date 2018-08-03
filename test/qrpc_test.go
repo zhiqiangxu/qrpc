@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"reflect"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -106,9 +107,15 @@ func TestPerformance(t *testing.T) {
 
 	srv := &http.Server{Addr: "0.0.0.0:8888"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "hello world xu")
+		runtime.GC()
+		io.WriteString(w, "hello world xu\n")
 	})
-	go srv.ListenAndServe()
+	go func() {
+		err := srv.ListenAndServe()
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	go startServer()
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
