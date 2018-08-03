@@ -3,81 +3,62 @@ package qrpc
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 // connstreams hosts all streams on connection
 type connstreams struct {
-	mu          sync.Mutex
-	streams     map[uint64]*stream // non pushed streams
-	pushstreams map[uint64]*stream // mutated 1. by framereader 2. G watching connection close
+	streams     sync.Map // map[uint64]*stream
+	pushstreams sync.Map // map[uint64]*stream
 
 	wg sync.WaitGroup
 }
 
 func newConnStreams() *connstreams {
-	return &connstreams{streams: make(map[uint64]*stream), pushstreams: make(map[uint64]*stream)}
+	return &connstreams{}
 }
 
 func (cs *connstreams) Wait() {
 	cs.wg.Wait()
-	if len(cs.pushstreams) > 0 {
-		panic("pushstreams not released")
-	}
-	if len(cs.streams) > 0 {
-		panic("streams not released")
-	}
 }
 
 // GetStream tries to get the associated stream, called by framereader for rst frame
 func (cs *connstreams) GetStream(requestID uint64, flags FrameFlag) *stream {
-	var target map[uint64]*stream
+
+	var target *sync.Map
 	if flags.IsPush() {
-		target = cs.pushstreams
+		target = &cs.pushstreams
 	} else {
-		target = cs.streams
+		target = &cs.streams
 	}
 
-	cs.mu.Lock()
-	s, ok := target[requestID]
-	cs.mu.Unlock()
-	if ok {
-		return s
+	v, ok := target.Load(requestID)
+	if !ok {
+		return nil
 	}
-
-	return nil
+	return v.(*stream)
 }
 
 // get or create the associated stream atomically
 // if PushFlag is set, should only call CreateOrGetStream if caller is framereader
 func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) *stream {
-	var (
-		target map[uint64]*stream
-	)
+
+	var target *sync.Map
 	if flags.IsPush() {
-		target = cs.pushstreams
+		target = &cs.pushstreams
 	} else {
-		target = cs.streams
+		target = &cs.streams
 	}
 
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-	s, ok := target[requestID]
-	if !ok {
-		s = newStream(ctx, requestID, &cs.wg)
-		target[requestID] = s
-		s.NotifyWhenClose(func() {
-			cs.mu.Lock()
-			os, ok := target[requestID]
-			if ok && os == s {
-				delete(target, requestID)
-			}
-			cs.mu.Unlock()
-			if !ok {
-				panic("DeleteStream fail")
-			}
-		})
+	v, loaded := target.LoadOrStore(requestID, newStream(ctx, requestID, func() {
+		target.Delete(requestID)
+		cs.wg.Done()
+	}))
+	if !loaded {
+		cs.wg.Add(1)
 	}
-	return s
+	return v.(*stream)
+
 }
 
 type stream struct {
@@ -86,58 +67,41 @@ type stream struct {
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
-	mu          sync.Mutex
-	closedSelf  bool
-	closedPeer  bool
-	fullClosed  bool
+	closedSelf  int32
+	closedPeer  int32
+	fullClosed  int32
 	binded      bool
 	fullCloseCh chan struct{}
-	closeNotify []func() // called when stream is fully closed
+	closeNotify func() // called when stream is fully closed
 }
 
-func newStream(ctx context.Context, requestID uint64, wg *sync.WaitGroup) *stream {
+func newStream(ctx context.Context, requestID uint64, closeNotify func()) *stream {
 	ctx, cancelFunc := context.WithCancel(ctx)
-	s := &stream{ctx: ctx, cancelFunc: cancelFunc, ID: requestID, frameCh: make(chan *Frame), fullCloseCh: make(chan struct{})}
+	s := &stream{ID: requestID, frameCh: make(chan *Frame), ctx: ctx, cancelFunc: cancelFunc, fullCloseCh: make(chan struct{}), closeNotify: closeNotify}
 
-	GoFunc(wg, func() {
-		select {
-		case <-ctx.Done():
-			s.ensureClose()
-		}
-	})
 	return s
 }
 
-func (s *stream) NotifyWhenClose(f func()) {
-	s.mu.Lock()
-	s.closeNotify = append(s.closeNotify, f)
-	s.mu.Unlock()
-}
-
 func (s *stream) IsSelfClosed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	return s.closedSelf
+	return atomic.LoadInt32(&s.closedSelf) != 0
+
 }
 
 // returns true if the stream has not been binded to any frame yet
 // streamreader will first call TryBind, and if fail, call AddInFrame
+// not ts
 func (s *stream) TryBind(firstFrame *Frame) bool {
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	if s.binded {
 		return false
 	}
+	s.binded = true
 
 	s.closePeerIfNeeded(firstFrame.Flags)
 
 	firstFrame.Stream = s
-	firstFrame.ctx = s.ctx // TODO remove ctx assignment in framereader
 
-	s.binded = true
 	return true
 }
 
@@ -153,19 +117,13 @@ func (s *stream) Done() <-chan struct{} {
 // if not accepted, framereader should wait until stream closed,
 // and call DeleteStream then CreateOrGetStream again
 func (s *stream) AddInFrame(frame *Frame) bool {
-	s.mu.Lock()
-	if s.closedPeer {
-		s.mu.Unlock()
+	if atomic.LoadInt32(&s.closedPeer) != 0 {
 		return false
 	}
 
-	s.mu.Unlock()
-
 	select {
 	case s.frameCh <- frame:
-		s.mu.Lock()
 		s.closePeerIfNeeded(frame.Flags)
-		s.mu.Unlock()
 		return true
 	case <-s.ctx.Done():
 		return false
@@ -174,18 +132,16 @@ func (s *stream) AddInFrame(frame *Frame) bool {
 
 func (s *stream) closePeerIfNeeded(flags FrameFlag) {
 	if flags.IsPush() {
-		s.closedSelf = true
+		atomic.StoreInt32(&s.closedSelf, 1)
 	}
-	if s.closedPeer {
+	if !flags.IsDone() {
 		return
 	}
 
-	if flags.IsDone() {
-		s.closedPeer = true
-		close(s.frameCh)
-		if s.closedSelf {
-			s.reset()
-		}
+	atomic.StoreInt32(&s.closedPeer, 1)
+	close(s.frameCh)
+	if atomic.LoadInt32(&s.closedSelf) != 0 {
+		s.afterDone()
 	}
 }
 
@@ -199,64 +155,49 @@ func (s *stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 
 	isRst := flags.IsRst()
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if isRst {
-		s.closedSelf = true
-		if s.closedPeer {
-			s.reset()
+		atomic.StoreInt32(&s.closedSelf, 1)
+		if atomic.LoadInt32(&s.closedPeer) != 0 {
+			s.afterDone()
 			return false
 		}
 		return true
 	}
 
-	if s.closedSelf {
-
+	if atomic.LoadInt32(&s.closedSelf) != 0 {
 		return false
 	}
 
-	if flags.IsDone() {
-		s.closedSelf = true
-		if s.closedPeer {
-			s.reset()
-		}
+	if !flags.IsDone() {
+		return true
 	}
 
+	atomic.StoreInt32(&s.closedSelf, 1)
+	if atomic.LoadInt32(&s.closedPeer) != 0 {
+		s.afterDone()
+	}
 	return true
 }
 
 func (s *stream) ResetByPeer() {
-	s.mu.Lock()
-	if !s.closedPeer {
-		s.closedPeer = true
+	swapped := atomic.CompareAndSwapInt32(&s.closedPeer, 0, 1)
+	if swapped {
 		close(s.frameCh)
 	}
-	s.mu.Unlock()
 
 	s.reset()
 }
 
-func (s *stream) ensureClose() {
-	s.mu.Lock()
-	if !s.closedPeer {
-		s.closedPeer = true
-		close(s.frameCh)
-	}
-	closeNotify := s.closeNotify
-	s.closeNotify = nil
-	fullClosed := s.fullClosed
-	if !fullClosed {
-		s.fullClosed = true
-	}
-	s.mu.Unlock()
-	for _, f := range closeNotify {
-		f()
-	}
-	closeNotify = nil
-	if !fullClosed {
+func (s *stream) afterDone() {
+
+	swapped := atomic.CompareAndSwapInt32(&s.fullClosed, 0, 1)
+
+	if swapped {
+		s.reset()
+		s.closeNotify()
 		close(s.fullCloseCh)
 	}
+
 }
 
 func (s *stream) reset() {

@@ -98,5 +98,5 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 		return nil, err
 	}
 
-	return &Frame{RequestID: requestID, Cmd: cmd, Flags: flags, Payload: payload, ctx: dfr.ctx}, nil
+	return &Frame{RequestID: requestID, Cmd: cmd, Flags: flags, Payload: payload}, nil
 }
