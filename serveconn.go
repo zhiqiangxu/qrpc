@@ -314,7 +314,6 @@ func (sc *serveconn) closeUntracked() error {
 		return err
 	}
 	sc.cancelCtx()
-	sc.cs.Wait()
 
 	for _, f := range sc.closeNotify {
 		f()

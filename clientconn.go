@@ -271,7 +271,6 @@ func (conn *Connection) Close(err error) error {
 	conn.respes = make(map[uint64]*response)
 
 	conn.cancelCtx()
-	conn.cs.Wait()
 
 	var fatal bool
 	if !(err == context.Canceled || err == context.DeadlineExceeded) {

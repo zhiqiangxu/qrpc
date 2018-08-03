@@ -11,15 +11,10 @@ type connstreams struct {
 	streams     sync.Map // map[uint64]*stream
 	pushstreams sync.Map // map[uint64]*stream
 
-	wg sync.WaitGroup
 }
 
 func newConnStreams() *connstreams {
 	return &connstreams{}
-}
-
-func (cs *connstreams) Wait() {
-	cs.wg.Wait()
 }
 
 // GetStream tries to get the associated stream, called by framereader for rst frame
@@ -50,13 +45,9 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 		target = &cs.streams
 	}
 
-	v, loaded := target.LoadOrStore(requestID, newStream(ctx, requestID, func() {
+	v, _ := target.LoadOrStore(requestID, newStream(ctx, requestID, func() {
 		target.Delete(requestID)
-		cs.wg.Done()
 	}))
-	if !loaded {
-		cs.wg.Add(1)
-	}
 	return v.(*stream)
 
 }
