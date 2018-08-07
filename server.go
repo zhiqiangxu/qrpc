@@ -81,7 +81,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {
-		// TODO error response
+		r.Close()
 		return
 	}
 	mux.mu.RUnlock()

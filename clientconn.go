@@ -15,13 +15,13 @@ import (
 // it is thread safe
 type Connection struct {
 	// immutable
-	net.Conn
+	rwc        net.Conn
+	addr       string
 	reader     *defaultFrameReader
-	p          *sync.Pool
 	conf       ConnectionConfig
 	subscriber SubFunc // there can be only one subscriber because of streamed frames
 
-	writeFrameCh chan writeFrameRequest
+	writeFrameCh chan writeFrameRequest // it's never closed so won't panic
 
 	// cancelCtx cancels the connection-level context.
 	cancelCtx context.CancelFunc
@@ -29,9 +29,10 @@ type Connection struct {
 	ctx context.Context
 	wg  sync.WaitGroup // wait group for goroutines
 
-	mu     sync.Mutex
-	closed bool
-	respes map[uint64]*response
+	mu      sync.Mutex
+	closed  bool
+	respes  map[uint64]*response
+	newConn *Connection // created by GetNewConn
 
 	cs *connstreams
 }
@@ -70,28 +71,18 @@ func (r *response) Close() {
 
 // NewConnection creates a connection without Client
 func NewConnection(addr string, conf ConnectionConfig, f func(*Connection, *Frame)) (*Connection, error) {
-	return newConnectionWithPool(addr, conf, nil, SubFunc(f))
-}
-
-func newConnectionWithPool(addr string, conf ConnectionConfig, p *sync.Pool, f SubFunc) (*Connection, error) {
-	conn, err := net.Dial("tcp", addr)
+	conn, err := net.DialTimeout("tcp", addr, conf.DialTimeout)
 	if err != nil {
-		logError("Dial", err)
+		logError("NewConnection Dial", err)
 		return nil, err
 	}
 
-	if conf.Ctx == nil {
-		conf.Ctx = context.Background()
-	}
-
 	c := &Connection{
-		Conn: conn, conf: conf, subscriber: f, p: p,
+		rwc: conn, addr: addr, conf: conf, subscriber: f,
 		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
 		cs: newConnStreams()}
 
-	if p == nil {
-		c.wakeup()
-	}
+	c.wakeup()
 
 	return c, nil
 }
@@ -101,8 +92,8 @@ func (conn *Connection) wakeup() {
 	if conn.closed {
 		conn.closed = false
 	}
-	conn.ctx, conn.cancelCtx = context.WithCancel(conn.conf.Ctx)
-	conn.reader = newFrameReader(conn.ctx, conn.Conn, conn.conf.ReadTimeout)
+	conn.ctx, conn.cancelCtx = context.WithCancel(context.Background())
+	conn.reader = newFrameReader(conn.ctx, conn.rwc, conn.conf.ReadTimeout)
 
 	GoFunc(&conn.wg, func() {
 		conn.readFrames()
@@ -113,14 +104,14 @@ func (conn *Connection) wakeup() {
 	})
 }
 
-// Wait block until clonsed
-func (conn *Connection) Wait() {
-	conn.wg.Wait()
-}
-
 // GetWriter return a FrameWriter
 func (conn *Connection) GetWriter() FrameWriter {
 	return newFrameWriter(conn.ctx, conn.writeFrameCh)
+}
+
+// Wait block until closed
+func (conn *Connection) Wait() {
+	conn.wg.Wait()
 }
 
 // StreamWriter is returned by StreamRequest
@@ -137,7 +128,7 @@ type defaultStreamWriter struct {
 	flags     FrameFlag
 }
 
-// NewStreamWriter creates a streamwriter from StreamWriter
+// NewStreamWriter creates a StreamWriter from FrameWriter
 func NewStreamWriter(w FrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
 	dfr, ok := w.(*defaultFrameWriter)
 	if !ok {
@@ -188,9 +179,33 @@ func (conn *Connection) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint6
 	return requestID, resp, err
 }
 
+// GetNewConn creates a new qrpc connection
+func (conn *Connection) GetNewConn(f func(*Connection, *Frame)) (*Connection, error) {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
+	if conn.newConn != nil {
+		return conn.newConn, nil
+	}
+	subfunc := f
+	if f == nil {
+		subfunc = conn.subscriber
+	}
+	newConn, err := NewConnection(conn.addr, conn.conf, subfunc)
+	if err != nil {
+		logError("GetNewConn", err)
+		return nil, err
+	}
+
+	conn.newConn = newConn
+	return conn.newConn, nil
+}
+
 var (
 	// ErrNoNewUUID when no new uuid available
 	ErrNoNewUUID = errors.New("no new uuid available temporary")
+	// ErrConnAlreadyClosed when try to operate on an already closed conn
+	ErrConnAlreadyClosed = errors.New("connection already closed")
 )
 
 func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
@@ -201,6 +216,10 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 
 	requestID = PoorManUUID()
 	conn.mu.Lock()
+	if conn.closed {
+		conn.mu.Unlock()
+		return 0, nil, nil, ErrConnAlreadyClosed
+	}
 	i := 0
 	for {
 		_, ok := conn.respes[requestID]
@@ -220,7 +239,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		conn.mu.Unlock()
 		return 0, nil, nil, ErrNoNewUUID
 	}
-	resp := &response{Frame: make(chan *Frame)}
+	resp := &response{Frame: make(chan *Frame, 1)}
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
@@ -231,8 +250,11 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 
 	if err != nil {
 		conn.mu.Lock()
-		resp.Close()
-		delete(conn.respes, requestID)
+		resp, ok := conn.respes[requestID]
+		if ok {
+			resp.Close()
+			delete(conn.respes, requestID)
+		}
 		conn.mu.Unlock()
 		return 0, nil, nil, err
 	}
@@ -251,11 +273,8 @@ func PoorManUUID() (result uint64) {
 	return
 }
 
-// ErrConnAlreadyClosed when try to close an already closed conn
-var ErrConnAlreadyClosed = errors.New("close an already closed conn")
-
-// Close internally returns the connection to pool if not fatal
-func (conn *Connection) Close(err error) error {
+// Close closes the qrpc connection
+func (conn *Connection) Close() error {
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
@@ -272,31 +291,17 @@ func (conn *Connection) Close(err error) error {
 
 	conn.cancelCtx()
 
-	var fatal bool
-	if !(err == context.Canceled || err == context.DeadlineExceeded) {
-		fatal = true
-	}
-
-	if conn.p != nil && !fatal {
-		conn.p.Put(conn)
-		return nil
-	}
-
-	return conn.Conn.Close()
+	return conn.rwc.Close()
 }
 
 var requestID uint64
 
 func (conn *Connection) readFrames() {
-	var (
-		err   error
-		frame *Frame
-	)
 	defer func() {
-		conn.Close(err)
+		conn.Close()
 	}()
 	for {
-		frame, err = conn.reader.ReadFrame(conn.cs)
+		frame, err := conn.reader.ReadFrame(conn.cs)
 		if err != nil {
 			return
 		}
@@ -314,7 +319,7 @@ func (conn *Connection) readFrames() {
 		conn.mu.Lock()
 		resp, ok := conn.respes[frame.RequestID]
 		if !ok {
-			//log error
+			logError("dangling resp", frame.RequestID)
 			conn.mu.Unlock()
 			continue
 		}
@@ -329,9 +334,9 @@ func (conn *Connection) readFrames() {
 func (conn *Connection) writeFrames() (err error) {
 
 	defer func() {
-		conn.Close(err)
+		conn.Close()
 	}()
-	writer := NewWriterWithTimeout(conn.ctx, conn.Conn, conn.conf.WriteTimeout)
+	writer := NewWriterWithTimeout(conn.ctx, conn.rwc, conn.conf.WriteTimeout)
 	for {
 		select {
 		case res := <-conn.writeFrameCh:

@@ -1,7 +1,7 @@
 package qrpc
 
 import (
-	"context"
+	"time"
 
 	"github.com/go-kit/kit/metrics"
 )
@@ -21,7 +21,7 @@ type SubFunc func(*Connection, *Frame)
 
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {
-	Ctx          context.Context
 	WriteTimeout int
 	ReadTimeout  int
+	DialTimeout  time.Duration
 }

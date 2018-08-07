@@ -28,11 +28,13 @@ func TestNonStream(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	conf := qrpc.ConnectionConfig{}
-	cli := qrpc.NewClient(conf)
 
-	conn := cli.GetConn(addr, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	for _, flag := range []qrpc.FrameFlag{0, qrpc.NBFlag} {
 		_, resp, err := conn.Request(HelloCmd, flag, []byte("xu"))
@@ -54,11 +56,13 @@ func TestNBWriter(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	conf := qrpc.ConnectionConfig{WriteTimeout: 2}
-	cli := qrpc.NewClient(conf)
 
-	conn := cli.GetConn(addr, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	w := conn.GetWriter()
 	for i := 0; ; i++ {
@@ -79,11 +83,13 @@ func TestCancel(t *testing.T) {
 	time.Sleep(time.Second * 2)
 
 	conf := qrpc.ConnectionConfig{}
-	cli := qrpc.NewClient(conf)
 
-	conn := cli.GetConn(addr, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
+	if err != nil {
+		panic(err)
+	}
 
 	requestID, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
 	if err != nil {
@@ -143,11 +149,62 @@ func TestPerformance(t *testing.T) {
 		}
 	}
 	wg.Wait()
-	conn.Close(nil)
+	conn.Close()
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 
 	time.Sleep(time.Hour)
+
+}
+
+func TestPerformanceShort(t *testing.T) {
+
+	srv := &http.Server{Addr: "0.0.0.0:8888"}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		runtime.GC()
+		io.WriteString(w, "hello world xu\n")
+	})
+	go func() {
+		err := srv.ListenAndServe()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	go startServer()
+
+	time.Sleep(time.Second * 2)
+	i := 0
+	var wg sync.WaitGroup
+	startTime := time.Now()
+
+	for {
+		qrpc.GoFunc(&wg, func() {
+			conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
+			if err != nil {
+				panic(err)
+			}
+			defer conn.Close()
+			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+			if err != nil {
+				panic(err)
+			}
+
+			frame := resp.GetFrame()
+			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+				panic("fail")
+			}
+		})
+		i++
+		if i > n {
+			break
+		}
+	}
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
+
+	select {}
 
 }
 

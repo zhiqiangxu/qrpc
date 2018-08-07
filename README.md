@@ -53,9 +53,8 @@ const (
 )
 func main() {
     conf := qrpc.ConnectionConfig{}
-    cli := qrpc.NewClient(conf)
 
-    conn := cli.GetConn("0.0.0.0:8080", nil)
+    conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
 
     _, resp, _ := conn.Request(HelloCmd, 0/*no flags*/, []byte("xu"))
     frame := resp.GetFrame()
@@ -94,9 +93,8 @@ const (
 )
 func main() {
     conf := qrpc.ConnectionConfig{}
-    cli := qrpc.NewClient(conf)
 
-    conn := cli.GetConn("0.0.0.0:8080", nil)
+    conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
 
     writer, resp, _ := conn.StreamRequest(HelloCmd, 0, []byte("first frame"))
     writer.StartWrite(HelloCmd)
@@ -238,8 +236,8 @@ In the above example, server will `push` a message to all connections !
 To handle `pushed` message, the relevant change at `client` side is:
 
 ```diff
--    conn := cli.GetConn("0.0.0.0:8080", nil)
-+    conn := cli.GetConn("0.0.0.0:8080", func(conn *qrpc.Connection, pushedFrame *qrpc.Frame) {
+-    conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
++    conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, func(conn *qrpc.Connection, pushedFrame *qrpc.Frame) {
 +        fmt.Println(pushedFrame)
 +    })
 ```
