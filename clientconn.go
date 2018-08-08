@@ -38,7 +38,7 @@ type Connection struct {
 
 // Response for response frames
 type Response interface {
-	GetFrame() *Frame
+	GetFrame() (*Frame, error)
 	GetFrameWithContext(ctx context.Context) (*Frame, error) // frame is valid is error is nil
 }
 
@@ -46,9 +46,12 @@ type response struct {
 	Frame chan *Frame
 }
 
-func (r *response) GetFrame() *Frame {
+func (r *response) GetFrame() (*Frame, error) {
 	frame := <-r.Frame
-	return frame
+	if frame == nil {
+		return nil, ErrConnAlreadyClosed
+	}
+	return frame, nil
 }
 
 func (r *response) GetFrameWithContext(ctx context.Context) (*Frame, error) {

@@ -42,9 +42,9 @@ func TestNonStream(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		frame := resp.GetFrame()
-		if frame == nil {
-			panic("nil frame")
+		frame, err := resp.GetFrame()
+		if err != nil {
+			panic(err)
 		}
 		fmt.Println("resp is ", string(frame.Payload))
 	}
@@ -102,9 +102,9 @@ func TestCancel(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	frame := resp.GetFrame()
-	if frame == nil {
-		panic("nil frame")
+	frame, err := resp.GetFrame()
+	if err != nil {
+		panic(err)
 	}
 	fmt.Println("resp is ", string(frame.Payload))
 
@@ -139,7 +139,7 @@ func TestPerformance(t *testing.T) {
 		}
 
 		qrpc.GoFunc(&wg, func() {
-			frame := resp.GetFrame()
+			frame, _ := resp.GetFrame()
 			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}
@@ -232,7 +232,7 @@ func TestPerformanceShort(t *testing.T) {
 				panic(err)
 			}
 
-			frame := resp.GetFrame()
+			frame, _ := resp.GetFrame()
 			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}

@@ -57,7 +57,7 @@ func main() {
     conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
 
     _, resp, _ := conn.Request(HelloCmd, 0/*no flags*/, []byte("xu"))
-    frame := resp.GetFrame()
+    frame, _ := resp.GetFrame()
     fmt.Println("resp is", string(frame.Payload))
 }
 ```
@@ -100,7 +100,7 @@ func main() {
     writer.StartWrite(HelloCmd)
     writer.WriteBytes([]byte("last frame"))
     writer.EndWrite(true) // will attach StreamEndFlag
-    frame := resp.GetFrame()
+    frame, _ := resp.GetFrame()
     fmt.Println("resp is", string(frame.Payload))
 }
 
