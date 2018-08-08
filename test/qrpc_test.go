@@ -1,6 +1,7 @@
 package test
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -153,8 +154,49 @@ func TestPerformance(t *testing.T) {
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 
-	time.Sleep(time.Hour)
+	select {}
 
+}
+
+func TestAPI(t *testing.T) {
+
+	srv := &http.Server{Addr: "0.0.0.0:8888"}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		runtime.GC()
+		io.WriteString(w, "hello world xu\n")
+	})
+	go func() {
+		err := srv.ListenAndServe()
+		if err != nil {
+			panic(err)
+		}
+	}()
+
+	go startServer()
+	api := qrpc.NewAPI([]string{addr}, qrpc.ConnectionConfig{}, nil)
+	i := 0
+	var wg sync.WaitGroup
+	startTime := time.Now()
+	for {
+		qrpc.GoFunc(&wg, func() {
+			frame, err := api.Call(context.Background(), HelloCmd, []byte("xu"))
+			if err != nil {
+				panic(err)
+			}
+			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+				panic("fail")
+			}
+		})
+		i++
+		if i > n {
+			break
+		}
+	}
+
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
+	select {}
 }
 
 func TestPerformanceShort(t *testing.T) {
