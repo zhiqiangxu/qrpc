@@ -176,7 +176,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
 		err := writer.EndWrite()
 		if err != nil {
-			logError("send error frame", err)
+			logError("send error frame", err, frame)
 		}
 	}
 
