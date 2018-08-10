@@ -231,7 +231,7 @@ func (sc *serveconn) readFrames() (err error) {
 			sc.Close()
 		}
 	}()
-	gate := make(gate)
+	gate := make(gate, 1)
 	gateDone := gate.Done
 
 	for {
