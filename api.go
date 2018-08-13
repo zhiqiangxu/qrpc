@@ -90,13 +90,16 @@ type APIResult struct {
 func (api *defaultAPI) CallAll(ctx context.Context, cmd Cmd, payload []byte) map[string]*APIResult {
 
 	result := make(map[string]*APIResult)
+	mu := sync.Mutex{}
 
 	var wg sync.WaitGroup
 	for i := range api.endpoints {
 		idx := i
 		GoFunc(&wg, func() {
 			frame, err := api.callViaIdx(ctx, idx, cmd, payload)
+			mu.Lock()
 			result[api.endpoints[idx]] = &APIResult{Frame: frame, Err: err}
+			mu.Unlock()
 		})
 	}
 	wg.Wait()
@@ -143,6 +146,7 @@ func (api *defaultAPI) callWithoutConn(ctx context.Context, idx int, cmd Cmd, pa
 	if !ok {
 		conn := api.reconnectIdx(idx)
 		if conn == nil {
+			api.mu.Unlock()
 			return nil, ErrEndPointNotAvaiable
 		}
 		api.safeStoreConnLocked(idx, conn)

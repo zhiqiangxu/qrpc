@@ -28,10 +28,9 @@ type Connection struct {
 	ctx context.Context
 	wg  sync.WaitGroup // wait group for goroutines
 
-	mu      sync.Mutex
-	closed  bool
-	respes  map[uint64]*response
-	newConn *Connection // created by GetNewConn
+	mu     sync.Mutex
+	closed bool
+	respes map[uint64]*response
 
 	cs *connstreams
 }
@@ -182,28 +181,6 @@ func (conn *Connection) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint6
 	requestID, resp, _, err := conn.writeFirstFrame(cmd, flags, payload)
 
 	return requestID, resp, err
-}
-
-// GetNewConn creates a new qrpc connection
-func (conn *Connection) GetNewConn(f func(*Connection, *Frame)) (*Connection, error) {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-
-	if conn.newConn != nil {
-		return conn.newConn, nil
-	}
-	subfunc := f
-	if f == nil {
-		subfunc = conn.subscriber
-	}
-	newConn, err := NewConnection(conn.addr, conn.conf, subfunc)
-	if err != nil {
-		logError("GetNewConn", err)
-		return nil, err
-	}
-
-	conn.newConn = newConn
-	return conn.newConn, nil
 }
 
 var (
