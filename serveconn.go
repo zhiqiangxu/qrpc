@@ -98,6 +98,7 @@ func (sc *serveconn) serve(ctx context.Context) {
 			logError("connection panic", sc.rwc.RemoteAddr().String(), err, buf)
 		}
 		sc.Close()
+		sc.wg.Wait()
 	}()
 
 	binding := sc.server.bindings[idx]
