@@ -12,8 +12,11 @@ import (
 
 // API for non blocking roundtrip calls
 type API interface {
+	// call random endpoint
 	Call(ctx context.Context, cmd Cmd, payload []byte) (*Frame, error)
+	// call specified endpoint
 	CallOne(ctx context.Context, endpoint string, cmd Cmd, payload []byte) (*Frame, error)
+	// call all endpoint
 	CallAll(ctx context.Context, cmd Cmd, payload []byte) map[string]*APIResult
 }
 
