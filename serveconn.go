@@ -82,13 +82,8 @@ func (ci *ConnectionInfo) GetID() string {
 	return ci.id
 }
 
-// Server returns the server
-func (sc *serveconn) Server() *Server {
-	return sc.server
-}
-
-func (sc *serveconn) NotifyWhenClose(f func()) {
-	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+// NotifyWhenClose ensures f is called when connection is closed
+func (ci *ConnectionInfo) NotifyWhenClose(f func()) {
 	ci.l.Lock()
 
 	if ci.closed {
@@ -99,7 +94,11 @@ func (sc *serveconn) NotifyWhenClose(f func()) {
 
 	ci.closeNotify = append(ci.closeNotify, f)
 	ci.l.Unlock()
+}
 
+// Server returns the server
+func (sc *serveconn) Server() *Server {
+	return sc.server
 }
 
 // ReaderConfig for change timeout
