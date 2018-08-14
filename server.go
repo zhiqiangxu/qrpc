@@ -326,12 +326,7 @@ func (srv *Server) WalkConnByID(idx int, ids []string, f func(FrameWriter, *Conn
 func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) {
 	srv.activeConn[idx].Range(func(k, v interface{}) bool {
 		sc := k.(*serveconn)
-		ci, ok := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-		if !ok {
-			// exclude non-initialized connections
-			return true
-		}
-		return f(sc.GetWriter(), ci)
+		return f(sc.GetWriter(), sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo))
 	})
 }
 
