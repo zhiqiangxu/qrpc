@@ -53,19 +53,19 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
-	L           sync.Mutex
-	Closed      bool
-	ID          string
-	CloseNotify []func()
+	l           sync.Mutex
+	closed      bool
+	id          string
+	closeNotify []func()
 	SC          *serveconn
 	Anything    interface{}
 }
 
 // GetID returns the ID
 func (ci *ConnectionInfo) GetID() string {
-	ci.L.Lock()
-	defer ci.L.Unlock()
-	return ci.ID
+	ci.l.Lock()
+	defer ci.l.Unlock()
+	return ci.id
 }
 
 // Server returns the server
@@ -75,16 +75,16 @@ func (sc *serveconn) Server() *Server {
 
 func (sc *serveconn) NotifyWhenClose(f func()) {
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.L.Lock()
+	ci.l.Lock()
 
-	if ci.Closed {
-		ci.L.Unlock()
+	if ci.closed {
+		ci.l.Unlock()
 		f()
 		return
 	}
 
-	ci.CloseNotify = append(ci.CloseNotify, f)
-	ci.L.Unlock()
+	ci.closeNotify = append(ci.closeNotify, f)
+	ci.l.Unlock()
 
 }
 
@@ -204,12 +204,13 @@ func (sc *serveconn) SetID(id string) {
 		panic("empty id not allowed")
 	}
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.L.Lock()
-	if ci.ID != "" {
+	ci.l.Lock()
+	if ci.id != "" {
+		ci.l.Unlock()
 		panic("SetID called twice")
 	}
-	ci.ID = id
-	ci.L.Unlock()
+	ci.id = id
+	ci.l.Unlock()
 
 	sc.server.bindID(sc, id)
 }
@@ -340,11 +341,11 @@ func (sc *serveconn) closeUntracked() error {
 	sc.cancelCtx()
 
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.L.Lock()
-	ci.Closed = true
-	closeNotify := ci.CloseNotify
-	ci.CloseNotify = nil
-	ci.L.Unlock()
+	ci.l.Lock()
+	ci.closed = true
+	closeNotify := ci.closeNotify
+	ci.closeNotify = nil
+	ci.l.Unlock()
 
 	for _, f := range closeNotify {
 		f()
