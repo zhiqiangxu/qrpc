@@ -17,9 +17,9 @@ const (
 )
 
 // A serveconn represents the server side of an qrpc connection.
+// all fields (except untrack) are immutable, mutables are in ConnectionInfo
 type serveconn struct {
 	// server is the server on which the connection arrived.
-	// Immutable; never nil.
 	server *Server
 
 	// cancelCtx cancels the connection-level context.
@@ -30,12 +30,7 @@ type serveconn struct {
 
 	idx int
 
-	id string // the only mutable for user
 	cs *connstreams
-
-	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
-	untrackedCh chan struct{}
-	closeNotify []func()
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
@@ -47,6 +42,9 @@ type serveconn struct {
 	readFrameCh  chan readFrameResult   // written by conn.readFrames
 	writeFrameCh chan writeFrameRequest // written by FrameWriter
 
+	// modified by Server
+	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
+	untrackedCh chan struct{}
 }
 
 // ConnectionInfoKey is context key for ConnectionInfo
@@ -55,8 +53,12 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
-	SC       *serveconn // read only
-	Anything interface{}
+	L           sync.Mutex
+	Closed      bool
+	ID          string
+	CloseNotify []func()
+	SC          *serveconn
+	Anything    interface{}
 }
 
 // Server returns the server
@@ -65,7 +67,18 @@ func (sc *serveconn) Server() *Server {
 }
 
 func (sc *serveconn) NotifyWhenClose(f func()) {
-	sc.closeNotify = append(sc.closeNotify, f)
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.L.Lock()
+
+	if ci.Closed {
+		ci.L.Unlock()
+		f()
+		return
+	}
+
+	ci.CloseNotify = append(ci.CloseNotify, f)
+	ci.L.Unlock()
+
 }
 
 // ReaderConfig for change timeout
@@ -79,13 +92,7 @@ func (sc *serveconn) Reader() ReaderConfig {
 }
 
 // Serve a new connection.
-func (sc *serveconn) serve(ctx context.Context) {
-
-	ctx, cancelCtx := context.WithCancel(ctx)
-	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
-
-	sc.cancelCtx = cancelCtx
-	sc.ctx = ctx
+func (sc *serveconn) serve() {
 
 	idx := sc.idx
 
@@ -108,6 +115,7 @@ func (sc *serveconn) serve(ctx context.Context) {
 	} else {
 		maxFrameSize = DefaultMaxFrameSize
 	}
+	ctx := sc.ctx
 	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, maxFrameSize)
 	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
 
@@ -188,12 +196,22 @@ func (sc *serveconn) SetID(id string) {
 	if id == "" {
 		panic("empty id not allowed")
 	}
-	sc.id = id
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.L.Lock()
+	if ci.ID != "" {
+		panic("SetID called twice")
+	}
+	ci.ID = id
+	ci.L.Unlock()
+
 	sc.server.bindID(sc, id)
 }
 
 func (sc *serveconn) GetID() string {
-	return sc.id
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.L.Lock()
+	defer ci.L.Unlock()
+	return ci.ID
 }
 
 // GetWriter generate a FrameWriter for the connection
@@ -316,7 +334,14 @@ func (sc *serveconn) closeUntracked() error {
 	}
 	sc.cancelCtx()
 
-	for _, f := range sc.closeNotify {
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.L.Lock()
+	ci.Closed = true
+	closeNotify := ci.CloseNotify
+	ci.CloseNotify = nil
+	ci.L.Unlock()
+
+	for _, f := range closeNotify {
 		f()
 	}
 	return nil

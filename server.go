@@ -121,18 +121,18 @@ func NewServer(bindings []ServerBinding) *Server {
 // ListenAndServe starts listening on all bindings
 func (srv *Server) ListenAndServe() error {
 
-	for idx, binding := range srv.bindings {
+	for i, binding := range srv.bindings {
+
 		ln, err := net.Listen("tcp", binding.Addr)
 		if err != nil {
 			srv.Shutdown()
 			return err
 		}
 
-		GoFunc(&srv.wg, func(idx int) func() {
-			return func() {
-				srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
-			}
-		}(idx))
+		idx := i
+		GoFunc(&srv.wg, func() {
+			srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
+		})
 
 	}
 
@@ -184,17 +184,17 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				srv.logf("qrpc: Accept error: %v; retrying in %v", e, tempDelay)
+				logError("qrpc: Accept error", e, "retrying in", tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			}
 			return e
 		}
 		tempDelay = 0
-		c := srv.newConn(rw, idx)
+		c := srv.newConn(serveCtx, rw, idx)
 
 		GoFunc(&srv.wg, func() {
-			c.serve(serveCtx)
+			c.serve()
 		})
 	}
 }
@@ -226,8 +226,8 @@ func (srv *Server) trackListener(ln net.Listener, add bool) {
 }
 
 // Create new connection from rwc.
-func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
-	c := &serveconn{
+func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *serveconn {
+	sc := &serveconn{
 		server:       srv,
 		rwc:          rwc,
 		idx:          idx,
@@ -236,8 +236,15 @@ func (srv *Server) newConn(rwc net.Conn, idx int) *serveconn {
 		readFrameCh:  make(chan readFrameResult),
 		writeFrameCh: make(chan writeFrameRequest)}
 
-	srv.activeConn[idx].Store(c, struct{}{})
-	return c
+	ctx, cancelCtx := context.WithCancel(ctx)
+	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
+
+	sc.cancelCtx = cancelCtx
+	sc.ctx = ctx
+
+	srv.activeConn[idx].Store(sc, struct{}{})
+
+	return sc
 }
 
 // bindID bind the id to sc
@@ -269,17 +276,14 @@ func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
 	}
 	idx := sc.idx
 
-	if sc.id != "" {
-		srv.id2Conn[idx].Delete(sc.id)
+	id := sc.GetID()
+	if id != "" {
+		srv.id2Conn[idx].Delete(id)
 	}
 	srv.activeConn[idx].Delete(sc)
 
 	close(sc.untrackedCh)
 	return true, sc.untrackedCh
-}
-
-func (srv *Server) logf(format string, args ...interface{}) {
-
 }
 
 var shutdownPollInterval = 500 * time.Millisecond
