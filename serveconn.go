@@ -61,6 +61,13 @@ type ConnectionInfo struct {
 	Anything    interface{}
 }
 
+// GetID returns the ID
+func (ci *ConnectionInfo) GetID() string {
+	ci.L.Lock()
+	defer ci.L.Unlock()
+	return ci.ID
+}
+
 // Server returns the server
 func (sc *serveconn) Server() *Server {
 	return sc.server
@@ -209,9 +216,7 @@ func (sc *serveconn) SetID(id string) {
 
 func (sc *serveconn) GetID() string {
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.L.Lock()
-	defer ci.L.Unlock()
-	return ci.ID
+	return ci.GetID()
 }
 
 // GetWriter generate a FrameWriter for the connection
