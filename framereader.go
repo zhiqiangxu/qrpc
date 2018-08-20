@@ -82,6 +82,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	size := binary.BigEndian.Uint32(header)
 	if dfr.maxFrameSize > 0 && size > uint32(dfr.maxFrameSize) {
+		logError("ErrFrameTooLarge", size)
 		return nil, ErrFrameTooLarge
 	}
 	requestID := binary.BigEndian.Uint64(header[4:])

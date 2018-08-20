@@ -265,10 +265,10 @@ func (sc *serveconn) readFrames() (err error) {
 
 	ctx := sc.ctx
 	defer func() {
+		logError("readFrames", err)
 		if err != nil {
 			sc.Close()
 		}
-		logError("readFrames", err)
 	}()
 	gate := make(gate, 1)
 	gateDone := gate.Done
