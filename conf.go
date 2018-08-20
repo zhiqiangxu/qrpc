@@ -14,6 +14,7 @@ type ServerBinding struct {
 	DefaultWriteTimeout int
 	MaxFrameSize        int
 	LatencyMetric       metrics.Histogram
+	CounterMetric       metrics.Counter
 }
 
 // SubFunc for subscribe callback

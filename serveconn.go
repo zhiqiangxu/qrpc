@@ -175,6 +175,13 @@ func (sc *serveconn) serve() {
 
 func (sc *serveconn) instrument(frame *RequestFrame, begin time.Time, err interface{}) {
 	binding := sc.server.bindings[sc.idx]
+
+	if binding.CounterMetric != nil {
+		// TODO new counter
+		countlvs := []string{"appid", "", "kind", strconv.Itoa(int(frame.Cmd))}
+		binding.CounterMetric.With(countlvs...).Add(1)
+	}
+
 	if binding.LatencyMetric == nil {
 		return
 	}
