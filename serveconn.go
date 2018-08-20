@@ -176,9 +176,13 @@ func (sc *serveconn) serve() {
 func (sc *serveconn) instrument(frame *RequestFrame, begin time.Time, err interface{}) {
 	binding := sc.server.bindings[sc.idx]
 
+	if binding.CounterMetric == nil && binding.LatencyMetric == nil {
+		return
+	}
+
+	errStr := fmt.Sprintf("%v", err)
 	if binding.CounterMetric != nil {
-		// TODO new counter
-		countlvs := []string{"appid", "", "kind", strconv.Itoa(int(frame.Cmd))}
+		countlvs := []string{"method", strconv.Itoa(int(frame.Cmd)), "error", errStr}
 		binding.CounterMetric.With(countlvs...).Add(1)
 	}
 
@@ -186,7 +190,7 @@ func (sc *serveconn) instrument(frame *RequestFrame, begin time.Time, err interf
 		return
 	}
 
-	lvs := []string{"method", strconv.Itoa(int(frame.Cmd)), "error", fmt.Sprintf("%v", err)}
+	lvs := []string{"method", strconv.Itoa(int(frame.Cmd)), "error", errStr}
 
 	binding.LatencyMetric.With(lvs...).Observe(time.Since(begin).Seconds())
 
