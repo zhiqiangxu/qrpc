@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 var (
@@ -262,6 +263,7 @@ func (srv *Server) bindID(sc *serveconn, id string) {
 		if !ok {
 			<-ch
 		}
+		logInfo(uintptr(unsafe.Pointer(sc)), "trigger closeUntracked")
 		vsc.closeUntracked()
 	}
 
