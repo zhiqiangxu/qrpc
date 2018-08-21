@@ -112,6 +112,10 @@ func (sc *serveconn) Reader() ReaderConfig {
 	return sc.reader
 }
 
+func (sc *serveconn) RemoteAddr() string {
+	return sc.rwc.RemoteAddr().String()
+}
+
 // Serve a new connection.
 func (sc *serveconn) serve() {
 
