@@ -263,7 +263,7 @@ func (srv *Server) bindID(sc *serveconn, id string) {
 		if !ok {
 			<-ch
 		}
-		logInfo(uintptr(unsafe.Pointer(sc)), "trigger closeUntracked", uintptr(unsafe.Pointer(vsc)))
+		logDebug(uintptr(unsafe.Pointer(sc)), "trigger closeUntracked", uintptr(unsafe.Pointer(vsc)))
 		vsc.closeUntracked()
 	}
 
