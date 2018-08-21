@@ -361,6 +361,7 @@ func (sc *serveconn) Close() error {
 
 func (sc *serveconn) closeUntracked() error {
 
+	logInfo(uintptr(unsafe.Pointer(sc)), "closeUntracked")
 	err := sc.rwc.Close()
 	if err != nil {
 		return err
