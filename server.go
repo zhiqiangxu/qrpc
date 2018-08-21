@@ -249,12 +249,15 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *servecon
 }
 
 // bindID bind the id to sc
+// it is concurrent safe
 func (srv *Server) bindID(sc *serveconn, id string) {
 
 	idx := sc.idx
-	v, ok := srv.id2Conn[idx].Load(id)
 
-	if ok {
+check:
+	v, loaded := srv.id2Conn[idx].LoadOrStore(id, sc)
+
+	if loaded {
 		vsc := v.(*serveconn)
 		if vsc == sc {
 			return
@@ -265,9 +268,9 @@ func (srv *Server) bindID(sc *serveconn, id string) {
 		}
 		logDebug(uintptr(unsafe.Pointer(sc)), "trigger closeUntracked", uintptr(unsafe.Pointer(vsc)))
 		vsc.closeUntracked()
-	}
 
-	srv.id2Conn[idx].Store(id, sc)
+		goto check
+	}
 }
 
 func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
