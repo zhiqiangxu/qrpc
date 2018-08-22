@@ -266,7 +266,7 @@ check:
 		if !ok {
 			<-ch
 		}
-		logDebug(uintptr(unsafe.Pointer(sc)), "trigger closeUntracked", uintptr(unsafe.Pointer(vsc)))
+		logDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
 		vsc.closeUntracked()
 
 		goto check

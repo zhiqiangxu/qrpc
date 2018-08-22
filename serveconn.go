@@ -281,7 +281,7 @@ func (sc *serveconn) readFrames() (err error) {
 
 	ctx := sc.ctx
 	defer func() {
-		logDebug(uintptr(unsafe.Pointer(sc)), "readFrames", err)
+		logDebug(unsafe.Pointer(sc), "readFrames", err)
 		if err != nil {
 			sc.Close()
 		}
@@ -341,7 +341,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 
 			_, err := writer.Write(dfw.GetWbuf())
 			if err != nil {
-				logDebug(uintptr(unsafe.Pointer(sc)), "serveconn Write", err)
+				logDebug(unsafe.Pointer(sc), "serveconn Write", err)
 				sc.Close()
 			}
 			res.result <- err
@@ -354,7 +354,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 // Close the connection.
 func (sc *serveconn) Close() error {
 
-	logDebug(uintptr(unsafe.Pointer(sc)), "Close")
+	logDebug(unsafe.Pointer(sc), "Close")
 	ok, ch := sc.server.untrack(sc)
 	if !ok {
 		<-ch
@@ -365,7 +365,7 @@ func (sc *serveconn) Close() error {
 
 func (sc *serveconn) closeUntracked() error {
 
-	logDebug(uintptr(unsafe.Pointer(sc)), "closeUntracked")
+	logDebug(unsafe.Pointer(sc), "closeUntracked")
 	err := sc.rwc.Close()
 	if err != nil {
 		return err
