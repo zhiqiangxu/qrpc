@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 )
 
 /* api provides utilities for make nonblocking api calls with qrpc.Connection */
@@ -18,6 +19,8 @@ type API interface {
 	CallOne(ctx context.Context, endpoint string, cmd Cmd, payload []byte) (*Frame, error)
 	// call all endpoint
 	CallAll(ctx context.Context, cmd Cmd, payload []byte) map[string]*APIResult
+	// Close all connections
+	Close() error
 }
 
 // NewAPI creates an API instance
@@ -67,6 +70,7 @@ type defaultAPI struct {
 	activeConns sync.Map // map[*Connection]int
 	conns       sync.Map // map[int]*Connection
 	mu          sync.Mutex
+	closed      int32
 }
 
 // call with random endpoint
@@ -110,8 +114,8 @@ func (api *defaultAPI) CallAll(ctx context.Context, cmd Cmd, payload []byte) map
 var (
 	// ErrEndPointNotExists when call non exist endpoint
 	ErrEndPointNotExists = errors.New("endpoint not exists")
-	// ErrEndPointNotAvaiable when specified endpoint not available
-	ErrEndPointNotAvaiable = errors.New("endpoint not avaiable")
+	// ErrClosed when calling closed api
+	ErrClosed = errors.New("api closed")
 )
 
 func (api *defaultAPI) CallOne(ctx context.Context, endpoint string, cmd Cmd, payload []byte) (*Frame, error) {
@@ -144,10 +148,10 @@ func (api *defaultAPI) callWithoutConn(ctx context.Context, idx int, cmd Cmd, pa
 	c, ok := api.conns.Load(idx)
 
 	if !ok {
-		conn := api.reconnectIdx(idx)
-		if conn == nil {
+		conn, err := api.reconnectIdx(idx)
+		if err != nil {
 			api.mu.Unlock()
-			return nil, ErrEndPointNotAvaiable
+			return nil, err
 		}
 		api.safeStoreConnLocked(idx, conn)
 		api.mu.Unlock()
@@ -193,14 +197,17 @@ func (api *defaultAPI) safeStoreConnLocked(idx int, conn *Connection) {
 	api.activeConns.Store(conn, idx)
 }
 
-func (api *defaultAPI) reconnectIdx(idx int) *Connection {
+func (api *defaultAPI) reconnectIdx(idx int) (*Connection, error) {
+	if atomic.LoadInt32(&api.closed) != 0 {
+		return nil, ErrClosed
+	}
 	conn, err := NewConnection(api.endpoints[idx], api.conf, nil)
 	if err != nil {
 		logError("NewConnection fail", err)
-		return nil
+		return nil, err
 	}
 
-	return conn
+	return conn, nil
 }
 
 func (api *defaultAPI) callViaActiveConns(ctx context.Context, cmd Cmd, payload []byte) (result *Frame, err error) {
@@ -233,4 +240,21 @@ func (api *defaultAPI) getIdx() int {
 
 	logError("getIdx bug")
 	return 0
+}
+
+func (api *defaultAPI) Close() error {
+	swapped := atomic.CompareAndSwapInt32(&api.closed, 0, 1)
+	if !swapped {
+		return ErrClosed
+	}
+
+	api.mu.Lock()
+	defer api.mu.Unlock()
+
+	api.activeConns.Range(func(k, v interface{}) bool {
+		k.(*Connection).Close()
+		return true
+	})
+
+	return nil
 }
