@@ -91,11 +91,8 @@ func NewConnection(addr string, conf ConnectionConfig, f func(*Connection, *Fram
 	return c, nil
 }
 
-// called internally when using pool
 func (conn *Connection) wakeup() {
-	if conn.closed {
-		conn.closed = false
-	}
+
 	conn.ctx, conn.cancelCtx = context.WithCancel(context.Background())
 	conn.reader = newFrameReader(conn.ctx, conn.rwc, conn.conf.ReadTimeout)
 
@@ -274,6 +271,11 @@ func (conn *Connection) Close() error {
 	conn.cancelCtx()
 
 	return conn.rwc.Close()
+}
+
+// Done returns the done channel
+func (conn *Connection) Done() <-chan struct{} {
+	return conn.ctx.Done()
 }
 
 var requestID uint64
