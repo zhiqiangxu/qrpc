@@ -278,6 +278,13 @@ func (conn *Connection) Done() <-chan struct{} {
 	return conn.ctx.Done()
 }
 
+// IsClosed tells whether connection is closed
+func (conn *Connection) IsClosed() bool {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+	return conn.closed
+}
+
 var requestID uint64
 
 func (conn *Connection) readFrames() {
