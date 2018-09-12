@@ -52,6 +52,20 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 
 }
 
+// Release all streams
+// it is called in clientconn when the connection is already closed
+// otherwise may panic like close frameCh twice
+func (cs *connstreams) Release() {
+	cs.pushstreams.Range(func(k, v interface{}) bool {
+		v.(*stream).Release()
+		return true
+	})
+	cs.streams.Range(func(k, v interface{}) bool {
+		v.(*stream).Release()
+		return true
+	})
+}
+
 type stream struct {
 	ID         uint64
 	frameCh    chan *Frame // always not nil
@@ -195,4 +209,11 @@ func (s *stream) reset() {
 
 	s.cancelFunc()
 
+}
+
+// Release is only called by clientconn for reconnect
+// it's only safe to call when read/write goroutines are finished beforehand
+func (s *stream) Release() {
+	s.ResetByPeer()
+	s.afterDone()
 }

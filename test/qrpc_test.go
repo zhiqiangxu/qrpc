@@ -232,7 +232,10 @@ func TestPerformanceShort(t *testing.T) {
 				panic(err)
 			}
 
-			frame, _ := resp.GetFrame()
+			frame, err := resp.GetFrame()
+			if err != nil {
+				panic(err)
+			}
 			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}

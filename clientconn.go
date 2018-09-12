@@ -6,8 +6,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	mathrand "math/rand"
 	"net"
 	"sync"
+	"time"
+)
+
+const (
+	reconnectIntervalAfter1stRound = time.Second * 2
 )
 
 // Connection defines a qrpc connection
@@ -15,12 +21,14 @@ import (
 type Connection struct {
 	// immutable
 	rwc        net.Conn
-	addr       string
-	reader     *defaultFrameReader
+	addrs      []string
+	reconnect  bool
 	conf       ConnectionConfig
 	subscriber SubFunc // there can be only one subscriber because of streamed frames
 
 	writeFrameCh chan writeFrameRequest // it's never closed so won't panic
+
+	idx int // modified in connect
 
 	// cancelCtx cancels the connection-level context.
 	cancelCtx context.CancelFunc
@@ -73,36 +81,102 @@ func (r *response) Close() {
 	close(r.Frame)
 }
 
-// NewConnection creates a connection without Client
-func NewConnection(addr string, conf ConnectionConfig, f func(*Connection, *Frame)) (*Connection, error) {
-	conn, err := net.DialTimeout("tcp", addr, conf.DialTimeout)
+// NewConnection constructs a *Connection without reconnect ability
+func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (*Connection, error) {
+	rwc, err := net.DialTimeout("tcp", addr, conf.DialTimeout)
 	if err != nil {
 		logError("NewConnection Dial", err)
 		return nil, err
 	}
 
-	c := &Connection{
-		rwc: conn, addr: addr, conf: conf, subscriber: f,
-		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
-		cs: newConnStreams()}
-
-	c.wakeup()
-
-	return c, nil
+	return newConnection(rwc, []string{addr}, conf, f, false), nil
 }
 
-func (conn *Connection) wakeup() {
-
-	conn.ctx, conn.cancelCtx = context.WithCancel(context.Background())
-	conn.reader = newFrameReader(conn.ctx, conn.rwc, conn.conf.ReadTimeout)
-
-	GoFunc(&conn.wg, func() {
-		conn.readFrames()
+// NewConnectionWithReconnect constructs a *Connection with reconnect ability
+func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc) *Connection {
+	var copy []string
+	for _, addr := range addrs {
+		copy = append(copy, addr)
+	}
+	mathrand.Shuffle(len(copy), func(i, j int) {
+		copy[i], copy[j] = copy[j], copy[i]
 	})
 
-	GoFunc(&conn.wg, func() {
-		conn.writeFrames()
-	})
+	return newConnection(nil, copy, conf, f, true)
+}
+
+func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc, reconnect bool) *Connection {
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	c := &Connection{
+		rwc: rwc, addrs: addr, conf: conf, subscriber: f,
+		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
+		cs: newConnStreams(), ctx: ctx, cancelCtx: cancelCtx,
+		reconnect: reconnect}
+
+	GoFunc(&c.wg, c.loop)
+	return c
+}
+
+func (conn *Connection) loop() {
+	for {
+		if err := conn.connect(); err != nil {
+			// connx.Close() was called
+			return
+		}
+
+		ctx, cancelCtx := context.WithCancel(conn.ctx)
+		var wg sync.WaitGroup
+		GoFunc(&wg, func() {
+			conn.readFrames(ctx, cancelCtx)
+		})
+
+		GoFunc(&wg, func() {
+			conn.writeFrames(ctx, cancelCtx)
+		})
+
+		wg.Wait()
+
+		conn.closeRWC()
+
+		// close & quit if not reconnect; otherwise automatically reconnect
+		if !conn.reconnect {
+			conn.Close()
+			return
+		}
+	}
+}
+
+func (conn *Connection) connect() error {
+	// directly return if connection already established
+	if conn.rwc != nil {
+		return nil
+	}
+
+	count := 0
+	for {
+		addr := conn.addrs[conn.idx%len(conn.addrs)]
+		conn.idx++
+		count++
+
+		rwc, err := net.DialTimeout("tcp", addr, conn.conf.DialTimeout)
+		if err != nil {
+			logError("connect DialTimeout", err)
+		} else {
+			conn.rwc = rwc
+			return nil
+		}
+
+		if count >= len(conn.addrs) {
+			time.Sleep(reconnectIntervalAfter1stRound)
+		}
+
+		select {
+		case <-conn.ctx.Done():
+			return conn.ctx.Err()
+		default:
+		}
+	}
+
 }
 
 // GetWriter return a FrameWriter
@@ -252,6 +326,23 @@ func PoorManUUID() (result uint64) {
 	return
 }
 
+// close current rwc
+func (conn *Connection) closeRWC() {
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
+
+	conn.rwc.Close()
+	conn.rwc = nil // so that connect will Dial another rwc
+
+	for _, v := range conn.respes {
+		v.Close()
+	}
+	conn.respes = make(map[uint64]*response)
+
+	conn.cs.Release()
+	conn.cs = newConnStreams()
+}
+
 // Close closes the qrpc connection
 func (conn *Connection) Close() error {
 
@@ -263,14 +354,10 @@ func (conn *Connection) Close() error {
 	}
 
 	conn.closed = true
-	for _, v := range conn.respes {
-		v.Close()
-	}
-	conn.respes = make(map[uint64]*response)
 
 	conn.cancelCtx()
 
-	return conn.rwc.Close()
+	return nil
 }
 
 // Done returns the done channel
@@ -287,12 +374,14 @@ func (conn *Connection) IsClosed() bool {
 
 var requestID uint64
 
-func (conn *Connection) readFrames() {
-	defer func() {
-		conn.Close()
-	}()
+func (conn *Connection) readFrames(ctx context.Context, cancelCtx context.CancelFunc) {
+
+	defer cancelCtx()
+
+	reader := newFrameReader(ctx, conn.rwc, conn.conf.ReadTimeout)
+
 	for {
-		frame, err := conn.reader.ReadFrame(conn.cs)
+		frame, err := reader.ReadFrame(conn.cs)
 		if err != nil {
 			return
 		}
@@ -322,12 +411,12 @@ func (conn *Connection) readFrames() {
 	}
 }
 
-func (conn *Connection) writeFrames() (err error) {
+func (conn *Connection) writeFrames(ctx context.Context, cancelCtx context.CancelFunc) (err error) {
 
-	defer func() {
-		conn.Close()
-	}()
-	writer := NewWriterWithTimeout(conn.ctx, conn.rwc, conn.conf.WriteTimeout)
+	defer cancelCtx()
+
+	writer := NewWriterWithTimeout(ctx, conn.rwc, conn.conf.WriteTimeout)
+
 	for {
 		select {
 		case res := <-conn.writeFrameCh:
@@ -347,7 +436,7 @@ func (conn *Connection) writeFrames() (err error) {
 					break
 				}
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s := conn.cs.CreateOrGetStream(conn.ctx, requestID, flags)
+				s := conn.cs.CreateOrGetStream(ctx, requestID, flags)
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
 					break
@@ -360,8 +449,8 @@ func (conn *Connection) writeFrames() (err error) {
 				logError("clientconn Write", err)
 				return err
 			}
-		case <-conn.ctx.Done():
-			return conn.ctx.Err()
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 }
