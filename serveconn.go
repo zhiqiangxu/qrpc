@@ -236,7 +236,7 @@ func (sc *serveconn) SetID(id string) {
 	ci.l.Lock()
 	if ci.id != "" {
 		ci.l.Unlock()
-		panic(fmt.Sprintf("SetID called twice: %s vs %s", id, ci.id))
+		panic("SetID called twice")
 	}
 	ci.id = id
 	ci.l.Unlock()
@@ -282,8 +282,11 @@ func (sc *serveconn) readFrames() (err error) {
 	ctx := sc.ctx
 	defer func() {
 		logDebug(unsafe.Pointer(sc), "readFrames", err)
-		if err != nil {
-			sc.Close()
+		binding := sc.server.bindings[sc.idx]
+		if binding.CounterMetric != nil {
+			errStr := fmt.Sprintf("%v", err)
+			countlvs := []string{"method", "readFrames", "error", errStr}
+			binding.CounterMetric.With(countlvs...).Add(1)
 		}
 	}()
 	gate := make(gate, 1)
@@ -292,24 +295,34 @@ func (sc *serveconn) readFrames() (err error) {
 	for {
 		req, err := sc.reader.ReadFrame(sc.cs)
 		if err != nil {
+			sc.Close()
 			return err
 		}
 		select {
 		case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req), readMore: gateDone}:
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		}
 
 		select {
 		case <-gate:
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		}
 	}
 
 }
 
 func (sc *serveconn) writeFrames(timeout int) (err error) {
+
+	defer func() {
+		binding := sc.server.bindings[sc.idx]
+		if binding.CounterMetric != nil {
+			errStr := fmt.Sprintf("%v", err)
+			countlvs := []string{"method", "writeFrames", "error", errStr}
+			binding.CounterMetric.With(countlvs...).Add(1)
+		}
+	}()
 
 	ctx := sc.ctx
 	writer := NewWriterWithTimeout(ctx, sc.rwc, timeout)
@@ -339,14 +352,16 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 				}
 			}
 
-			_, err := writer.Write(dfw.GetWbuf())
+			_, err = writer.Write(dfw.GetWbuf())
 			if err != nil {
 				logDebug(unsafe.Pointer(sc), "serveconn Write", err)
 				sc.Close()
+				res.result <- err
+				return
 			}
-			res.result <- err
+			res.result <- nil
 		case <-ctx.Done():
-			return nil
+			return ctx.Err()
 		}
 	}
 }
