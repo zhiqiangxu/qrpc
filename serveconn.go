@@ -255,8 +255,12 @@ func (sc *serveconn) GetWriter() FrameWriter {
 	return newFrameWriter(sc.ctx, sc.writeFrameCh)
 }
 
-// ErrInvalidPacket when packet invalid
-var ErrInvalidPacket = errors.New("invalid packet")
+var (
+	// ErrNetTimeout for i/o timeout
+	ErrNetTimeout = errors.New("i/o timeout")
+	// ErrInvalidPacket when packet invalid
+	ErrInvalidPacket = errors.New("invalid packet")
+)
 
 type readFrameResult struct {
 	f *RequestFrame // valid until readMore is called
@@ -296,6 +300,9 @@ func (sc *serveconn) readFrames() (err error) {
 		req, err := sc.reader.ReadFrame(sc.cs)
 		if err != nil {
 			sc.Close()
+			if err, ok := err.(net.Error); ok && err.Timeout() {
+				return ErrNetTimeout
+			}
 			return err
 		}
 		select {
