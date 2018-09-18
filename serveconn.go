@@ -256,8 +256,6 @@ func (sc *serveconn) GetWriter() FrameWriter {
 }
 
 var (
-	// ErrNetTimeout for i/o timeout
-	ErrNetTimeout = errors.New("i/o timeout")
 	// ErrInvalidPacket when packet invalid
 	ErrInvalidPacket = errors.New("invalid packet")
 )
