@@ -300,8 +300,8 @@ func (sc *serveconn) readFrames() (err error) {
 		req, err := sc.reader.ReadFrame(sc.cs)
 		if err != nil {
 			sc.Close()
-			if err, ok := err.(net.Error); ok && err.Timeout() {
-				return ErrNetTimeout
+			if opErr, ok := err.(*net.OpError); ok {
+				return opErr.Err
 			}
 			return err
 		}
