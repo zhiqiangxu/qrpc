@@ -10,8 +10,8 @@ import (
 type ServerBinding struct {
 	Addr                string
 	Handler             Handler // handler to invoke
-	DefaultReadTimeout  int
-	DefaultWriteTimeout int
+	DefaultReadTimeout  int32
+	DefaultWriteTimeout int32
 	MaxFrameSize        int
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
@@ -22,7 +22,7 @@ type SubFunc func(*Connection, *Frame)
 
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {
-	WriteTimeout int
-	ReadTimeout  int
+	WriteTimeout int32
+	ReadTimeout  int32
 	DialTimeout  time.Duration
 }

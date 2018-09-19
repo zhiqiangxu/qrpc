@@ -24,11 +24,11 @@ type defaultFrameReader struct {
 }
 
 // newFrameReader creates a FrameWriter instance to read frames
-func newFrameReader(ctx context.Context, rwc net.Conn, timeout int) *defaultFrameReader {
+func newFrameReader(ctx context.Context, rwc net.Conn, timeout int32) *defaultFrameReader {
 	return newFrameReaderWithMFS(ctx, rwc, timeout, 0)
 }
 
-func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int, maxFrameSize int) *defaultFrameReader {
+func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int32, maxFrameSize int) *defaultFrameReader {
 	return &defaultFrameReader{Reader: NewReaderWithTimeout(ctx, rwc, timeout), ctx: ctx, maxFrameSize: maxFrameSize}
 }
 

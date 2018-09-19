@@ -154,7 +154,7 @@ func TestPerformance(t *testing.T) {
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 
-	select {}
+	// select {}
 
 }
 
