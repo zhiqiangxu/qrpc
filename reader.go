@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
-	"sync/atomic"
 	"time"
 )
 
@@ -14,7 +13,7 @@ import (
 type Reader struct {
 	conn    net.Conn
 	reader  *bufio.Reader
-	timeout int32
+	timeout int
 	ctx     context.Context
 }
 
@@ -31,7 +30,7 @@ func NewReader(ctx context.Context, conn net.Conn) *Reader {
 }
 
 // NewReaderWithTimeout allows specify timeout
-func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int32) *Reader {
+func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Reader {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -40,8 +39,8 @@ func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int32) *Re
 }
 
 // SetReadTimeout allows modify timeout for read
-func (r *Reader) SetReadTimeout(timeout int32) {
-	atomic.StoreInt32(&r.timeout, timeout)
+func (r *Reader) SetReadTimeout(timeout int) {
+	r.timeout = timeout
 }
 
 // ReadUint32 read uint32 from socket
@@ -63,7 +62,7 @@ func (r *Reader) ReadBytes(bytes []byte) (err error) {
 		offset      int
 		n           int
 	)
-	timeout := atomic.LoadInt32(&r.timeout)
+	timeout := r.timeout
 	if timeout > 0 {
 		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
 	}

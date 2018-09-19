@@ -10,7 +10,7 @@ import (
 type Writer struct {
 	ctx     context.Context
 	conn    net.Conn
-	timeout int32
+	timeout int
 }
 
 const (
@@ -24,7 +24,7 @@ func NewWriter(ctx context.Context, conn net.Conn) *Writer {
 }
 
 // NewWriterWithTimeout new instance with timeout
-func NewWriterWithTimeout(ctx context.Context, conn net.Conn, timeout int32) *Writer {
+func NewWriterWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Writer {
 	return &Writer{ctx: ctx, conn: conn, timeout: timeout}
 }
 
