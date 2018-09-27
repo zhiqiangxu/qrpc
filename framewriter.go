@@ -46,6 +46,10 @@ func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags Frame
 
 }
 
+func (dfw *defaultFrameWriter) Cmd() Cmd {
+	return dfw.cmd
+}
+
 func (dfw *defaultFrameWriter) RequestID() uint64 {
 	return dfw.requestID
 }
