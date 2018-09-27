@@ -436,7 +436,7 @@ func (conn *Connection) writeFrames(ctx context.Context, cancelCtx context.Cance
 					break
 				}
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s := conn.cs.CreateOrGetStream(ctx, requestID, flags)
+				s, _ := conn.cs.CreateOrGetStream(ctx, requestID, flags)
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
 					break

@@ -36,7 +36,7 @@ func (cs *connstreams) GetStream(requestID uint64, flags FrameFlag) *stream {
 
 // get or create the associated stream atomically
 // if PushFlag is set, should only call CreateOrGetStream if caller is framereader
-func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) *stream {
+func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*stream, bool) {
 
 	var target *sync.Map
 	if flags.IsPush() {
@@ -45,10 +45,10 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 		target = &cs.streams
 	}
 
-	v, _ := target.LoadOrStore(requestID, newStream(ctx, requestID, func() {
+	v, loaded := target.LoadOrStore(requestID, newStream(ctx, requestID, func() {
 		target.Delete(requestID)
 	}))
-	return v.(*stream)
+	return v.(*stream), loaded
 
 }
 
