@@ -59,7 +59,7 @@ start:
 		}
 		s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 		if !loaded {
-			logInfo("new created stream:", requestID, flags)
+			logInfo("new created stream:", requestID, flags, f.Cmd)
 		}
 
 		if s.TryBind(f) {
