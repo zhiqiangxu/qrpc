@@ -52,6 +52,8 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	})
 	v, loaded := target.LoadOrStore(requestID, s)
 	if loaded {
+		// otherwise ml happens
+		// TODO refactor stream!
 		s.reset()
 	}
 	return v.(*stream), loaded
