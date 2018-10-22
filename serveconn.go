@@ -420,13 +420,12 @@ var p = &sync.Pool{
 
 func newServeConn() *serveconn {
 	sc := p.Get().(*serveconn)
-	runtime.SetFinalizer(sc, finalize)
+	// runtime.SetFinalizer(sc, (*serveconn).finalize)
 	return sc
 }
 
-func finalize(sc *serveconn) {
-
-	runtime.SetFinalizer(sc, nil)
+func (sc *serveconn) finalize() {
 	*sc = serveconn{}
 	p.Put(sc)
+	runtime.SetFinalizer(sc, nil)
 }
