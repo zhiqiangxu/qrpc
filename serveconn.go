@@ -411,21 +411,3 @@ func (sc *serveconn) closeUntracked() error {
 	}
 	return nil
 }
-
-var p = &sync.Pool{
-	New: func() interface{} {
-		return &serveconn{}
-	},
-}
-
-func newServeConn() *serveconn {
-	sc := p.Get().(*serveconn)
-	runtime.SetFinalizer(sc, finalize)
-	return sc
-}
-
-func finalize(sc *serveconn) {
-
-	*sc = serveconn{}
-	p.Put(sc)
-}

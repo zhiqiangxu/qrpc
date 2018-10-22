@@ -228,14 +228,14 @@ func (srv *Server) trackListener(ln net.Listener, add bool) {
 
 // Create new connection from rwc.
 func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *serveconn {
-	sc := newServeConn()
-	sc.server = srv
-	sc.rwc = rwc
-	sc.idx = idx
-	sc.untrackedCh = make(chan struct{})
-	sc.cs = newConnStreams()
-	sc.readFrameCh = make(chan readFrameResult)
-	sc.writeFrameCh = make(chan writeFrameRequest)
+	sc := &serveconn{
+		server:       srv,
+		rwc:          rwc,
+		idx:          idx,
+		untrackedCh:  make(chan struct{}),
+		cs:           newConnStreams(),
+		readFrameCh:  make(chan readFrameResult),
+		writeFrameCh: make(chan writeFrameRequest)}
 
 	ctx, cancelCtx := context.WithCancel(ctx)
 	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
