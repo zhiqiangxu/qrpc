@@ -131,6 +131,7 @@ func (sc *serveconn) serve() {
 		}
 		sc.Close()
 		sc.wg.Wait()
+		sc.finalize()
 	}()
 
 	binding := sc.server.bindings[idx]
@@ -420,12 +421,10 @@ var p = &sync.Pool{
 
 func newServeConn() *serveconn {
 	sc := p.Get().(*serveconn)
-	// runtime.SetFinalizer(sc, (*serveconn).finalize)
 	return sc
 }
 
 func (sc *serveconn) finalize() {
 	*sc = serveconn{}
 	p.Put(sc)
-	runtime.SetFinalizer(sc, nil)
 }
