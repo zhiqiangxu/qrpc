@@ -131,7 +131,6 @@ func (sc *serveconn) serve() {
 		}
 		sc.Close()
 		sc.wg.Wait()
-		sc.finalize()
 	}()
 
 	binding := sc.server.bindings[idx]
@@ -411,20 +410,4 @@ func (sc *serveconn) closeUntracked() error {
 		f()
 	}
 	return nil
-}
-
-var p = &sync.Pool{
-	New: func() interface{} {
-		return &serveconn{}
-	},
-}
-
-func newServeConn() *serveconn {
-	sc := p.Get().(*serveconn)
-	return sc
-}
-
-func (sc *serveconn) finalize() {
-	*sc = serveconn{}
-	p.Put(sc)
 }
