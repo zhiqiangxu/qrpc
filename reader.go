@@ -22,6 +22,8 @@ const (
 	ReadNoTimeout = -1
 	// CtxCheckMaxInterval for check ctx.Done
 	CtxCheckMaxInterval = 3 * time.Second
+	// ReadBufSize for read buf
+	ReadBufSize = 2048
 )
 
 // NewReader creates a StreamReader instance
@@ -35,7 +37,7 @@ func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Read
 		ctx = context.Background()
 	}
 
-	return &Reader{ctx: ctx, conn: conn, reader: bufio.NewReader(conn), timeout: timeout}
+	return &Reader{ctx: ctx, conn: conn, reader: bufio.NewReaderSize(conn, ReadBufSize), timeout: timeout}
 }
 
 // SetReadTimeout allows modify timeout for read
