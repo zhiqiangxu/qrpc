@@ -6,6 +6,8 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"runtime"
+	"sync"
 	"time"
 )
 
@@ -31,13 +33,23 @@ func NewReader(ctx context.Context, conn net.Conn) *Reader {
 	return NewReaderWithTimeout(ctx, conn, ReadNoTimeout)
 }
 
+var bufPool = sync.Pool{New: func() interface{} {
+	return bufio.NewReaderSize(nil, ReadBufSize)
+}}
+
 // NewReaderWithTimeout allows specify timeout
 func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Reader {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
-	return &Reader{ctx: ctx, conn: conn, reader: bufio.NewReaderSize(conn, ReadBufSize), timeout: timeout}
+	bufReader := bufPool.Get().(*bufio.Reader)
+	bufReader.Reset(conn)
+	runtime.SetFinalizer(bufReader, func(bufReader *bufio.Reader) {
+		bufReader.Reset(nil)
+		bufPool.Put(bufReader)
+	})
+	return &Reader{ctx: ctx, conn: conn, reader: bufReader, timeout: timeout}
 }
 
 // SetReadTimeout allows modify timeout for read
