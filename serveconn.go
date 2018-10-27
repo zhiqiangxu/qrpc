@@ -228,7 +228,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 }
 
 // SetID sets id for serveconn
-func (sc *serveconn) SetID(id string) {
+func (sc *serveconn) SetID(id string) bool {
 	if id == "" {
 		panic("empty id not allowed")
 	}
@@ -241,7 +241,7 @@ func (sc *serveconn) SetID(id string) {
 	ci.id = id
 	ci.l.Unlock()
 
-	sc.server.bindID(sc, id)
+	return sc.server.bindID(sc, id)
 }
 
 func (sc *serveconn) GetID() string {

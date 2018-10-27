@@ -251,7 +251,7 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *servecon
 
 // bindID bind the id to sc
 // it is concurrent safe
-func (srv *Server) bindID(sc *serveconn, id string) {
+func (srv *Server) bindID(sc *serveconn, id string) (kicked bool) {
 
 	idx := sc.idx
 
@@ -271,9 +271,12 @@ check:
 		errStr := fmt.Sprintf("%v", vsc.closeUntracked())
 		countlvs := []string{"method", "kickoff", "error", errStr}
 		srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
+		kicked = true
 
 		goto check
 	}
+
+	return
 }
 
 func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
