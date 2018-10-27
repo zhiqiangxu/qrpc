@@ -298,6 +298,7 @@ func (sc *serveconn) readFrames() (err error) {
 		req, err := sc.reader.ReadFrame(sc.cs)
 		if err != nil {
 			sc.Close()
+			sc.reader.Finalize()
 			if opErr, ok := err.(*net.OpError); ok {
 				return opErr.Err
 			}
@@ -410,6 +411,5 @@ func (sc *serveconn) closeUntracked() error {
 		f()
 	}
 
-	sc.reader.Finalize()
 	return nil
 }
