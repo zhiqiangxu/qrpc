@@ -3,6 +3,7 @@ package qrpc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -267,7 +268,9 @@ check:
 			<-ch
 		}
 		logDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
-		vsc.closeUntracked()
+		errStr := fmt.Sprintf("%v", vsc.closeUntracked())
+		countlvs := []string{"method", "kickoff", "error", errStr}
+		srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
 
 		goto check
 	}
