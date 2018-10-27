@@ -409,5 +409,7 @@ func (sc *serveconn) closeUntracked() error {
 	for _, f := range closeNotify {
 		f()
 	}
+
+	sc.reader.Finalize()
 	return nil
 }

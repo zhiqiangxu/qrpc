@@ -6,7 +6,6 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -45,11 +44,14 @@ func NewReaderWithTimeout(ctx context.Context, conn net.Conn, timeout int) *Read
 
 	bufReader := bufPool.Get().(*bufio.Reader)
 	bufReader.Reset(conn)
-	runtime.SetFinalizer(bufReader, func(bufReader *bufio.Reader) {
-		bufReader.Reset(nil)
-		bufPool.Put(bufReader)
-	})
 	return &Reader{ctx: ctx, conn: conn, reader: bufReader, timeout: timeout}
+}
+
+// Finalize is called when no longer used
+func (r *Reader) Finalize() {
+	r.reader.Reset(nil)
+	bufPool.Put(r.reader)
+	r.reader = nil
 }
 
 // SetReadTimeout allows modify timeout for read

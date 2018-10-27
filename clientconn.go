@@ -379,6 +379,7 @@ func (conn *Connection) readFrames(ctx context.Context, cancelCtx context.Cancel
 	defer cancelCtx()
 
 	reader := newFrameReader(ctx, conn.rwc, conn.conf.ReadTimeout)
+	defer reader.Finalize()
 
 	for {
 		frame, err := reader.ReadFrame(conn.cs)
