@@ -268,7 +268,15 @@ check:
 			<-ch
 		}
 		logDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
-		errStr := fmt.Sprintf("%v", vsc.closeUntracked())
+
+		err := vsc.closeUntracked()
+		if err != nil {
+			if opErr, ok := err.(*net.OpError); ok {
+				err = opErr.Err
+			}
+		}
+
+		errStr := fmt.Sprintf("%v", err)
 		countlvs := []string{"method", "kickoff", "error", errStr}
 		srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
 		kicked = true
