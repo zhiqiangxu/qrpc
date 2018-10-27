@@ -134,9 +134,9 @@ func (conn *Connection) loop() {
 			conn.writeFrames(ctx, cancelCtx)
 		})
 
-		wg.Wait()
-
+		<-ctx.Done()
 		conn.closeRWC()
+		wg.Wait()
 
 		// close & quit if not reconnect; otherwise automatically reconnect
 		if !conn.reconnect {

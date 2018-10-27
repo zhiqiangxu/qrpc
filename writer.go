@@ -16,6 +16,8 @@ type Writer struct {
 const (
 	// WriteNoTimeout will never timeout
 	WriteNoTimeout = -1
+	// CtxCheckMaxInterval for check ctx.Done
+	CtxCheckMaxInterval = 3 * time.Second
 )
 
 // NewWriter new instance

@@ -21,8 +21,6 @@ type Reader struct {
 const (
 	// ReadNoTimeout will never timeout
 	ReadNoTimeout = -1
-	// CtxCheckMaxInterval for check ctx.Done
-	CtxCheckMaxInterval = 3 * time.Second
 	// ReadBufSize for read buf
 	ReadBufSize = 2048
 )
@@ -73,39 +71,25 @@ func (r *Reader) ReadUint32() (uint32, error) {
 // ReadBytes read bytes honouring CtxCheckMaxInterval
 func (r *Reader) ReadBytes(bytes []byte) (err error) {
 	var (
-		endTime     time.Time
-		readTimeout time.Duration
-		offset      int
-		n           int
+		endTime time.Time
+		offset  int
+		n       int
 	)
 	timeout := r.timeout
 	if timeout > 0 {
 		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
+	} else {
+		endTime = time.Time{}
 	}
 	size := len(bytes)
 
 	for {
 
-		if timeout > 0 {
-			readTimeout = endTime.Sub(time.Now())
-			if readTimeout > CtxCheckMaxInterval {
-				readTimeout = CtxCheckMaxInterval
-			}
-		} else {
-			readTimeout = CtxCheckMaxInterval
-		}
-
-		r.conn.SetReadDeadline(time.Now().Add(readTimeout))
+		r.conn.SetReadDeadline(endTime)
 		n, err = io.ReadFull(r.reader, bytes[offset:])
 		offset += n
 		if err != nil {
-			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {
-				if timeout > 0 && time.Now().After(endTime) {
-					return err
-				}
-			} else {
-				return err
-			}
+			return err
 		}
 		if offset >= size {
 			return nil
