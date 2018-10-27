@@ -193,9 +193,9 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 			return e
 		}
 		tempDelay = 0
-		c := srv.newConn(serveCtx, rw, idx)
 
 		GoFunc(&srv.wg, func() {
+			c := srv.newConn(serveCtx, rw, idx)
 			c.serve()
 		})
 	}
