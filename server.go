@@ -313,6 +313,7 @@ func (srv *Server) Shutdown() error {
 	srv.mu.Lock()
 	lnerr := srv.closeListenersLocked()
 	if lnerr != nil {
+		srv.mu.Unlock()
 		return lnerr
 	}
 	srv.mu.Unlock()
