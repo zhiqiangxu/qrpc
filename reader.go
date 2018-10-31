@@ -22,7 +22,7 @@ const (
 	// ReadNoTimeout will never timeout
 	ReadNoTimeout = -1
 	// ReadBufSize for read buf
-	ReadBufSize = 2048
+	ReadBufSize = 1024
 )
 
 // NewReader creates a StreamReader instance
