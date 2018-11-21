@@ -97,9 +97,11 @@ type Server struct {
 	upTime   time.Time
 
 	// manages below
-	mu        sync.Mutex
-	listeners map[net.Listener]struct{}
-	doneChan  chan struct{}
+	mu           sync.Mutex
+	listeners    map[net.Listener]struct{}
+	doneChan     chan struct{}
+	shutdownFunc []func()
+	done         bool
 
 	id2Conn    []sync.Map
 	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
@@ -319,10 +321,29 @@ func (srv *Server) Shutdown() error {
 	srv.mu.Unlock()
 
 	close(srv.doneChan)
+	srv.done = true
+
+	for _, f := range srv.shutdownFunc {
+		f()
+	}
 
 	srv.wg.Wait()
 
 	return nil
+}
+
+// OnShutdown registers f to be called when shutdown
+func (srv *Server) OnShutdown(f func()) {
+
+	srv.mu.Lock()
+	if srv.done {
+		srv.mu.Unlock()
+		f()
+	}
+
+	srv.shutdownFunc = append(srv.shutdownFunc, f)
+	srv.mu.Unlock()
+
 }
 
 // GetPushID gets the pushId
