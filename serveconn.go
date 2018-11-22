@@ -283,7 +283,6 @@ func (sc *serveconn) readFrames() (err error) {
 
 	ctx := sc.ctx
 	defer func() {
-		logDebug(unsafe.Pointer(sc), "readFrames", err)
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
@@ -382,7 +381,6 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 // Close the connection.
 func (sc *serveconn) Close() error {
 
-	logDebug(unsafe.Pointer(sc), "Close")
 	ok, ch := sc.server.untrack(sc)
 	if !ok {
 		<-ch
@@ -393,7 +391,6 @@ func (sc *serveconn) Close() error {
 
 func (sc *serveconn) closeUntracked() error {
 
-	logDebug(unsafe.Pointer(sc), "closeUntracked")
 	err := sc.rwc.Close()
 	if err != nil {
 		return err
