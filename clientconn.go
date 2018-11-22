@@ -35,10 +35,12 @@ type Connection struct {
 	ctx context.Context
 	wg  sync.WaitGroup // wait group for goroutines
 
-	mu     sync.Mutex
-	closed bool
-	rwc    net.Conn
-	respes map[uint64]*response
+	mu            sync.Mutex
+	closed        bool
+	rwc           net.Conn
+	respes        map[uint64]*response
+	loopCtx       context.Context
+	loopCancelCtx context.CancelFunc
 
 	cs *connstreams
 }
@@ -129,17 +131,16 @@ func (conn *Connection) loop() {
 			return
 		}
 
-		ctx, cancelCtx := context.WithCancel(conn.ctx)
 		var wg sync.WaitGroup
 		GoFunc(&wg, func() {
-			conn.readFrames(ctx, cancelCtx)
+			conn.readFrames()
 		})
 
 		GoFunc(&wg, func() {
-			conn.writeFrames(ctx, cancelCtx)
+			conn.writeFrames()
 		})
 
-		<-ctx.Done()
+		<-conn.loopCtx.Done()
 		conn.closeRWC()
 		wg.Wait()
 
@@ -167,8 +168,11 @@ func (conn *Connection) connect() error {
 		if err != nil {
 			logError("connect DialTimeout", err)
 		} else {
+			ctx, cancelCtx := context.WithCancel(conn.ctx)
 			conn.mu.Lock()
 			conn.rwc = rwc
+			conn.loopCtx = ctx
+			conn.loopCancelCtx = cancelCtx
 			conn.mu.Unlock()
 			return nil
 		}
@@ -184,11 +188,6 @@ func (conn *Connection) connect() error {
 		}
 	}
 
-}
-
-// GetWriter return a FrameWriter
-func (conn *Connection) GetWriter() FrameWriter {
-	return newFrameWriter(conn.ctx, conn.writeFrameCh)
 }
 
 // Wait block until closed
@@ -309,7 +308,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
-	writer := newFrameWriter(conn.ctx, conn.writeFrameCh)
+	writer := newFrameWriter(conn.loopCtx, conn.writeFrameCh)
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
@@ -387,11 +386,11 @@ func (conn *Connection) IsClosed() bool {
 
 var requestID uint64
 
-func (conn *Connection) readFrames(ctx context.Context, cancelCtx context.CancelFunc) {
+func (conn *Connection) readFrames() {
 
-	defer cancelCtx()
+	defer conn.loopCancelCtx()
 
-	reader := newFrameReader(ctx, conn.rwc, conn.conf.ReadTimeout)
+	reader := newFrameReader(conn.loopCtx, conn.rwc, conn.conf.ReadTimeout)
 	defer reader.Finalize()
 
 	for {
@@ -425,11 +424,11 @@ func (conn *Connection) readFrames(ctx context.Context, cancelCtx context.Cancel
 	}
 }
 
-func (conn *Connection) writeFrames(ctx context.Context, cancelCtx context.CancelFunc) (err error) {
+func (conn *Connection) writeFrames() (err error) {
 
-	defer cancelCtx()
+	defer conn.loopCancelCtx()
 
-	writer := NewWriterWithTimeout(ctx, conn.rwc, conn.conf.WriteTimeout)
+	writer := NewWriterWithTimeout(conn.loopCtx, conn.rwc, conn.conf.WriteTimeout)
 
 	for {
 		select {
@@ -450,7 +449,7 @@ func (conn *Connection) writeFrames(ctx context.Context, cancelCtx context.Cance
 					break
 				}
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, _ := conn.cs.CreateOrGetStream(ctx, requestID, flags)
+				s, _ := conn.cs.CreateOrGetStream(conn.loopCtx, requestID, flags)
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
 					break
@@ -463,8 +462,8 @@ func (conn *Connection) writeFrames(ctx context.Context, cancelCtx context.Cance
 				logError("clientconn Write", err)
 				return err
 			}
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-conn.loopCtx.Done():
+			return conn.loopCtx.Err()
 		}
 	}
 }
