@@ -116,6 +116,8 @@ var (
 	ErrEndPointNotExists = errors.New("endpoint not exists")
 	// ErrClosed when calling closed api
 	ErrClosed = errors.New("api closed")
+	// ErrNotActiveConn when no active connection available
+	ErrNotActiveConn = errors.New("no active conn")
 )
 
 func (api *defaultAPI) CallOne(ctx context.Context, endpoint string, cmd Cmd, payload []byte) (*Frame, error) {
@@ -211,6 +213,7 @@ func (api *defaultAPI) reconnectIdx(idx int) (*Connection, error) {
 }
 
 func (api *defaultAPI) callViaActiveConns(ctx context.Context, cmd Cmd, payload []byte) (result *Frame, err error) {
+	err = ErrNotActiveConn
 	api.activeConns.Range(func(k, v interface{}) bool {
 		ac := k.(*Connection)
 		_, resp, err := ac.Request(cmd, NBFlag, payload)
