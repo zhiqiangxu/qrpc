@@ -120,6 +120,10 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 		cs: newConnStreams(), ctx: ctx, cancelCtx: cancelCtx,
 		reconnect: reconnect}
 
+	if rwc != nil {
+		// loopxxx should be paired with rwc
+		c.loopCtx, c.loopCancelCtx = context.WithCancel(ctx)
+	}
 	GoFunc(&c.wg, c.loop)
 	return c
 }
