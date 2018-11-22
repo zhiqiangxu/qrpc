@@ -102,7 +102,12 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 		copy[i], copy[j] = copy[j], copy[i]
 	})
 
-	return newConnection(nil, copy, conf, f, true)
+	rwc, err := net.DialTimeout("tcp", copy[len(copy)-1], conf.DialTimeout)
+	if err != nil {
+		logError("initconnect DialTimeout", err)
+		rwc = nil
+	}
+	return newConnection(rwc, copy, conf, f, true)
 }
 
 func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc, reconnect bool) *Connection {
