@@ -20,7 +20,6 @@ const (
 // it is thread safe
 type Connection struct {
 	// immutable
-	rwc        net.Conn
 	addrs      []string
 	reconnect  bool
 	conf       ConnectionConfig
@@ -38,6 +37,7 @@ type Connection struct {
 
 	mu     sync.Mutex
 	closed bool
+	rwc    net.Conn
 	respes map[uint64]*response
 
 	cs *connstreams
@@ -167,7 +167,9 @@ func (conn *Connection) connect() error {
 		if err != nil {
 			logError("connect DialTimeout", err)
 		} else {
+			conn.mu.Lock()
 			conn.rwc = rwc
+			conn.mu.Unlock()
 			return nil
 		}
 
@@ -264,6 +266,8 @@ var (
 	ErrNoNewUUID = errors.New("no new uuid available temporary")
 	// ErrConnAlreadyClosed when try to operate on an already closed conn
 	ErrConnAlreadyClosed = errors.New("connection already closed")
+	// ErrConnNotConnected when request not connected
+	ErrConnNotConnected = errors.New("connection not connected")
 )
 
 func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
@@ -277,6 +281,10 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	if conn.closed {
 		conn.mu.Unlock()
 		return 0, nil, nil, ErrConnAlreadyClosed
+	}
+	if conn.rwc == nil {
+		conn.mu.Unlock()
+		return 0, nil, nil, ErrConnNotConnected
 	}
 	i := 0
 	for {
