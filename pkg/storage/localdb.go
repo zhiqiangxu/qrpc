@@ -50,9 +50,11 @@ type Request struct {
 
 const (
 	// TablePrefix is for table
-	TablePrefix = "tbl:"
+	TablePrefix = "tbl"
 	// KVPrefix for plain kv
-	KVPrefix = "kv:"
+	KVPrefix = "kv"
+	// Separator is separator between key parts
+	Separator = ":"
 )
 
 // KeyPrefixForTable returns key prefix for table
@@ -67,7 +69,10 @@ func KeyForKV(key ...string) []byte {
 
 func join(s ...string) []byte {
 	var buf bytes.Buffer
-	for _, v := range s {
+	for i, v := range s {
+		if i != 0 {
+			buf.WriteString(Separator)
+		}
 		buf.WriteString(v)
 	}
 	return buf.Bytes()
