@@ -56,16 +56,16 @@ const (
 )
 
 // KeyPrefixForTable returns key prefix for table
-func (l *LocalDB) KeyPrefixForTable(table string) []byte {
-	return l.join(TablePrefix, table)
+func KeyPrefixForTable(table string) []byte {
+	return join(TablePrefix, table)
 }
 
 // KeyForKV returns key for plain kv
-func (l *LocalDB) KeyForKV(key ...string) []byte {
-	return l.join(append([]string{KVPrefix}, key...)...)
+func KeyForKV(key ...string) []byte {
+	return join(append([]string{KVPrefix}, key...)...)
 }
 
-func (l *LocalDB) join(s ...string) []byte {
+func join(s ...string) []byte {
 	var buf bytes.Buffer
 	for _, v := range s {
 		buf.WriteString(v)
@@ -95,7 +95,7 @@ func (l *LocalDB) TableKeyForID(table string, id uint64) []byte {
 	bytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(bytes, id)
 
-	prefix := l.KeyPrefixForTable(table)
+	prefix := KeyPrefixForTable(table)
 
 	key := append(prefix, bytes...)
 
@@ -157,7 +157,7 @@ func (l *LocalDB) IterateTable(table string, f func([]byte, []byte) error) error
 	return l.View(func(txn *badger.Txn) error {
 		it := txn.NewIterator(badger.DefaultIteratorOptions)
 		defer it.Close()
-		prefix := l.KeyPrefixForTable(table)
+		prefix := KeyPrefixForTable(table)
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
 			k := item.Key()
