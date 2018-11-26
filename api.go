@@ -214,9 +214,10 @@ func (api *defaultAPI) reconnectIdx(idx int) (*Connection, error) {
 
 func (api *defaultAPI) callViaActiveConns(ctx context.Context, cmd Cmd, payload []byte) (result *Frame, err error) {
 	err = ErrNotActiveConn
+	var resp Response
 	api.activeConns.Range(func(k, v interface{}) bool {
 		ac := k.(*Connection)
-		_, resp, err := ac.Request(cmd, NBFlag, payload)
+		_, resp, err = ac.Request(cmd, NBFlag, payload)
 		if err != nil {
 			idx := v.(int)
 			api.safeCloseDeleteConn(idx, ac)
