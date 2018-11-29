@@ -283,6 +283,9 @@ func (sc *serveconn) readFrames() (err error) {
 
 	ctx := sc.ctx
 	defer func() {
+		if err == ErrFrameTooLarge {
+			logError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
+		}
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
