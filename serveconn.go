@@ -159,6 +159,8 @@ func (sc *serveconn) serve() {
 			return
 		case res := <-sc.readFrameCh:
 
+			sc.server.waitThrottle(sc.idx, ctx.Done())
+
 			if !res.f.Flags.IsNonBlock() {
 				func() {
 					defer sc.handleRequestPanic(res.f, time.Now())
@@ -317,6 +319,7 @@ func (sc *serveconn) readFrames() (err error) {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+
 	}
 
 }

@@ -105,10 +105,16 @@ type Server struct {
 
 	id2Conn    []sync.Map
 	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
+	throttle   []atomic.Value
 
 	wg sync.WaitGroup // wait group for goroutines
 
 	pushID uint64
+}
+
+type throttle struct {
+	on bool
+	ch chan struct{}
 }
 
 // NewServer creates a server
@@ -119,7 +125,8 @@ func NewServer(bindings []ServerBinding) *Server {
 		listeners:  make(map[net.Listener]struct{}),
 		doneChan:   make(chan struct{}),
 		id2Conn:    make([]sync.Map, len(bindings)),
-		activeConn: make([]sync.Map, len(bindings))}
+		activeConn: make([]sync.Map, len(bindings)),
+		throttle:   make([]atomic.Value, len(bindings))}
 }
 
 // ListenAndServe starts listening on all bindings
@@ -167,6 +174,7 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	for {
+		srv.waitThrottle(idx, srv.doneChan)
 		l.SetDeadline(time.Now().Add(defaultAcceptTimeout))
 		rw, e := l.Accept()
 		if e != nil {
@@ -380,4 +388,39 @@ func (srv *Server) closeListenersLocked() error {
 		delete(srv.listeners, ln)
 	}
 	return err
+}
+
+// waitThrottle is concurrent safe
+func (srv *Server) waitThrottle(idx int, doneCh <-chan struct{}) {
+	v := srv.throttle[idx].Load()
+	t, ok := v.(throttle)
+	if ok && t.on {
+		select {
+		case <-t.ch:
+		case <-doneCh:
+		}
+	}
+}
+
+// SetThrottle sets throttle on
+func (srv *Server) SetThrottle(idx int) {
+	v := srv.throttle[idx].Load()
+	if v != nil {
+		// already on,do nothing
+		if v.(throttle).on {
+			return
+		}
+	}
+	srv.throttle[idx].Store(throttle{on: true, ch: make(chan struct{})})
+}
+
+// ClearThrottle clears throttle onff
+func (srv *Server) ClearThrottle(idx int) {
+	v := srv.throttle[idx].Load()
+	if v == nil {
+		return
+	}
+	close(v.(throttle).ch)
+
+	srv.throttle[idx].Store(throttle{on: false, ch: make(chan struct{})})
 }
