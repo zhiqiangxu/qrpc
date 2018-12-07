@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 )
 
 // connstreams hosts all streams on connection
@@ -46,7 +47,7 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	}
 
 	s := newStream(ctx, requestID, func() {
-		// logInfo(unsafe.Pointer(cs), "close stream", requestID, flags)
+		logInfo(unsafe.Pointer(cs), "close stream", requestID, flags)
 		target.Delete(requestID)
 	})
 	v, loaded := target.LoadOrStore(requestID, s)

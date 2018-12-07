@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"net"
+	"unsafe"
 )
 
 var (
@@ -59,7 +60,7 @@ start:
 		}
 		s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 		if !loaded {
-			// logInfo(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
+			logInfo(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
 		}
 
 		if s.TryBind(f) {
