@@ -443,7 +443,7 @@ func (conn *Connection) readFrames() {
 		if !ok {
 			conn.mu.Unlock()
 			if conn.conf.Handler != nil {
-				if frame.RequestID%2 != 0 {
+				if !frame.FromServer() {
 					logError("clientconn get RequestFrame.RequestID not even")
 					return
 				}

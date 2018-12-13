@@ -32,6 +32,16 @@ func (r *Frame) Context() context.Context {
 	return r.Stream.ctx
 }
 
+// FromClient returns true if frame is from clientconn
+func (r *Frame) FromClient() bool {
+	return r.RequestID%2 == 1
+}
+
+// FromServer returns true if frame is from serveconn
+func (r *Frame) FromServer() bool {
+	return r.RequestID%2 == 0
+}
+
 // RequestFrame is client->server
 type RequestFrame Frame
 
@@ -52,7 +62,7 @@ func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
 // Close the underlying connection
 func (r *RequestFrame) Close() error {
 
-	if r.RequestID%2 == 1 {
+	if r.FromClient() {
 		// RequestID odd means come from client
 		ci := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 		return ci.SC.Close()
@@ -65,6 +75,11 @@ func (r *RequestFrame) Close() error {
 
 }
 
+// FromClient returns true if frame is from clientconn
+func (r *RequestFrame) FromClient() bool {
+	return (*Frame)(r).FromClient()
+}
+
 // Context for RequestFrame
 func (r *RequestFrame) Context() context.Context {
 	return (*Frame)(r).Context()
@@ -73,14 +88,4 @@ func (r *RequestFrame) Context() context.Context {
 // FrameCh for RequestFrame
 func (r *RequestFrame) FrameCh() <-chan *Frame {
 	return (*Frame)(r).FrameCh()
-}
-
-// FromClient returns true if frame is from clientconn
-func (r *RequestFrame) FromClient() bool {
-	return r.RequestID%2 == 1
-}
-
-// FromServer returns true if frame is from serveconn
-func (r *RequestFrame) FromServer() bool {
-	return r.RequestID%2 == 0
 }
