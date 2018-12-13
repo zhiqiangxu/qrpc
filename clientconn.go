@@ -8,6 +8,7 @@ import (
 	"math"
 	mathrand "math/rand"
 	"net"
+	"runtime"
 	"sync"
 	"time"
 )
@@ -41,6 +42,7 @@ type Connection struct {
 	respes        map[uint64]*response
 	loopCtx       context.Context
 	loopCancelCtx context.CancelFunc
+	loopWG        *sync.WaitGroup
 
 	cs *connstreams
 }
@@ -112,13 +114,27 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 	return newConnection(rwc, copy, conf, f, true)
 }
 
+// ClientConnectionInfoKey is context key for ClientConnectionInfo
+// used to store custom information
+var ClientConnectionInfoKey = &contextKey{"qrpc-clientconnection"}
+
+// ClientConnectionInfo for store info on clientconnection
+type ClientConnectionInfo struct {
+	CC *Connection
+}
+
 func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc, reconnect bool) *Connection {
 	ctx, cancelCtx := context.WithCancel(context.Background())
+
 	c := &Connection{
 		rwc: rwc, addrs: addr, conf: conf, subscriber: f,
 		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
 		cs: newConnStreams(), ctx: ctx, cancelCtx: cancelCtx,
 		reconnect: reconnect}
+
+	if conf.Handler != nil {
+		c.ctx = context.WithValue(c.ctx, ClientConnectionInfoKey, &ClientConnectionInfo{CC: c})
+	}
 
 	if rwc != nil {
 		// loopxxx should be paired with rwc
@@ -135,18 +151,18 @@ func (conn *Connection) loop() {
 			return
 		}
 
-		var wg sync.WaitGroup
-		GoFunc(&wg, func() {
+		conn.loopWG = &sync.WaitGroup{}
+		GoFunc(conn.loopWG, func() {
 			conn.readFrames()
 		})
 
-		GoFunc(&wg, func() {
+		GoFunc(conn.loopWG, func() {
 			conn.writeFrames()
 		})
 
 		<-conn.loopCtx.Done()
 		conn.closeRWC()
-		wg.Wait()
+		conn.loopWG.Wait()
 
 		// close & quit if not reconnect; otherwise automatically reconnect
 		if !conn.reconnect {
@@ -279,7 +295,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		suc       bool
 	)
 
-	requestID = PoorManUUID()
+	requestID = PoorManUUID(true)
 	conn.mu.Lock()
 	if conn.closed {
 		conn.mu.Unlock()
@@ -301,7 +317,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		if i >= 3 {
 			break
 		}
-		requestID = PoorManUUID()
+		requestID = PoorManUUID(true)
 	}
 
 	if !suc {
@@ -332,12 +348,18 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 }
 
 // PoorManUUID generate a uint64 uuid
-func PoorManUUID() (result uint64) {
+func PoorManUUID(client bool) (result uint64) {
 	buf := make([]byte, 8)
 	rand.Read(buf)
 	result = binary.LittleEndian.Uint64(buf)
 	if result == 0 {
 		result = math.MaxUint64
+	}
+
+	if client {
+		result |= 1 //odd for client
+	} else {
+		result &= math.MaxUint64 - 1 //even for server
 	}
 	return
 }
@@ -347,6 +369,9 @@ func (conn *Connection) closeRWC() {
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
+	if conn.rwc == nil {
+		return
+	}
 	conn.rwc.Close()
 	conn.rwc = nil // so that connect will Dial another rwc
 
@@ -416,8 +441,25 @@ func (conn *Connection) readFrames() {
 		conn.mu.Lock()
 		resp, ok := conn.respes[frame.RequestID]
 		if !ok {
-			logError("dangling resp", frame.RequestID)
 			conn.mu.Unlock()
+			if conn.conf.Handler != nil {
+				if frame.RequestID%2 != 0 {
+					logError("clientconn get RequestFrame.RequestID not even")
+					return
+				}
+				if !frame.Flags.IsNonBlock() {
+					logError("clientconn get RequestFrame block")
+					return
+				}
+				GoFunc(conn.loopWG, func() {
+					defer conn.handleRequestPanic((*RequestFrame)(frame), time.Now())
+					conn.conf.Handler.ServeQRPC(conn.getWriter(), (*RequestFrame)(frame))
+				})
+				continue
+			}
+
+			logError("dangling resp", frame.RequestID)
+
 			continue
 		}
 		delete(conn.respes, frame.RequestID)
@@ -426,6 +468,31 @@ func (conn *Connection) readFrames() {
 		resp.SetResponse(frame)
 
 	}
+}
+
+func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time) {
+	err := recover()
+	if err != nil {
+		const size = 64 << 10
+		buf := make([]byte, size)
+		buf = buf[:runtime.Stack(buf, false)]
+		logError("Connection.handleRequestPanic", err, string(buf))
+	}
+
+	s := frame.Stream
+	if !s.IsSelfClosed() {
+		// send error frame
+		writer := conn.getWriter()
+		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
+		err := writer.EndWrite()
+		if err != nil {
+			logDebug("Connection.send error frame", err, frame)
+		}
+	}
+}
+
+func (conn *Connection) getWriter() FrameWriter {
+	return newFrameWriter(conn.loopCtx, conn.writeFrameCh)
 }
 
 func (conn *Connection) writeFrames() (err error) {

@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -60,6 +61,7 @@ type ConnectionInfo struct {
 	closeNotify []func()
 	SC          *serveconn
 	anything    interface{}
+	respes      map[uint64]*response
 }
 
 // GetAnything returns anything
@@ -283,6 +285,8 @@ func (g gate) Done() { g <- struct{}{} }
 
 func (sc *serveconn) readFrames() (err error) {
 
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+
 	ctx := sc.ctx
 	defer func() {
 		if err == ErrFrameTooLarge {
@@ -308,6 +312,20 @@ func (sc *serveconn) readFrames() (err error) {
 			}
 			return err
 		}
+		ci.l.Lock()
+		if ci.respes != nil {
+			resp, ok := ci.respes[req.RequestID]
+			if ok {
+				delete(ci.respes, req.RequestID)
+			}
+			ci.l.Unlock()
+			if ok {
+				resp.SetResponse(req)
+			}
+		} else {
+			ci.l.Unlock()
+		}
+
 		select {
 		case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req), readMore: gateDone}:
 		case <-ctx.Done():
@@ -382,6 +400,72 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			return ctx.Err()
 		}
 	}
+}
+
+// Request clientconn from serveconn
+func (sc *serveconn) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, error) {
+	flags = flags | NBFlag
+	requestID, resp, _, err := sc.writeFirstFrame(cmd, flags, payload)
+
+	return requestID, resp, err
+}
+
+func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
+	var (
+		requestID uint64
+		suc       bool
+	)
+
+	if atomic.LoadUint32(&sc.untrack) != 0 {
+		return 0, nil, nil, ErrConnAlreadyClosed
+	}
+
+	requestID = PoorManUUID(false)
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	ci.l.Lock()
+	if ci.respes == nil {
+		ci.respes = make(map[uint64]*response)
+	}
+	i := 0
+	for {
+		_, ok := ci.respes[requestID]
+		if !ok {
+			suc = true
+			break
+		}
+
+		i++
+		if i >= 3 {
+			break
+		}
+		requestID = PoorManUUID(false)
+	}
+
+	if !suc {
+		ci.l.Unlock()
+		return 0, nil, nil, ErrNoNewUUID
+	}
+	resp := &response{Frame: make(chan *Frame, 1)}
+	ci.respes[requestID] = resp
+	ci.l.Unlock()
+
+	writer := newFrameWriter(sc.ctx, sc.writeFrameCh)
+	writer.StartWrite(requestID, cmd, flags)
+	writer.WriteBytes(payload)
+	err := writer.EndWrite()
+
+	if err != nil {
+		ci.l.Lock()
+		resp, ok := ci.respes[requestID]
+		if ok {
+			resp.Close()
+			delete(ci.respes, requestID)
+		}
+		ci.l.Unlock()
+		return 0, nil, nil, err
+	}
+
+	return requestID, resp, writer, nil
 }
 
 // Close the connection.

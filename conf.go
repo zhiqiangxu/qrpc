@@ -25,4 +25,5 @@ type ConnectionConfig struct {
 	WriteTimeout int
 	ReadTimeout  int
 	DialTimeout  time.Duration
+	Handler      Handler
 }

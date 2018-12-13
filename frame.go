@@ -42,11 +42,27 @@ func (r *RequestFrame) ConnectionInfo() *ConnectionInfo {
 
 }
 
+// ClientConnectionInfo returns the underlying ClientConnectionInfo
+func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
+
+	return r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
+
+}
+
 // Close the underlying connection
 func (r *RequestFrame) Close() error {
 
-	ci := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	return ci.SC.Close()
+	if r.RequestID%2 == 1 {
+		// RequestID odd means come from client
+		ci := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+		return ci.SC.Close()
+	}
+
+	// RequestID even means com from server
+	cci := r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
+	cci.CC.closeRWC()
+	return nil
+
 }
 
 // Context for RequestFrame
@@ -57,4 +73,14 @@ func (r *RequestFrame) Context() context.Context {
 // FrameCh for RequestFrame
 func (r *RequestFrame) FrameCh() <-chan *Frame {
 	return (*Frame)(r).FrameCh()
+}
+
+// FromClient returns true if frame is from clientconn
+func (r *RequestFrame) FromClient() bool {
+	return r.RequestID%2 == 1
+}
+
+// FromServer returns true if frame is from serveconn
+func (r *RequestFrame) FromServer() bool {
+	return r.RequestID%2 == 0
 }
