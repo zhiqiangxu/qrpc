@@ -312,18 +312,20 @@ func (sc *serveconn) readFrames() (err error) {
 			}
 			return err
 		}
-		ci.l.Lock()
-		if ci.respes != nil {
-			resp, ok := ci.respes[req.RequestID]
-			if ok {
-				delete(ci.respes, req.RequestID)
+		if req.FromServer() {
+			ci.l.Lock()
+			if ci.respes != nil {
+				resp, ok := ci.respes[req.RequestID]
+				if ok {
+					delete(ci.respes, req.RequestID)
+				}
+				ci.l.Unlock()
+				if ok {
+					resp.SetResponse(req)
+				}
+			} else {
+				ci.l.Unlock()
 			}
-			ci.l.Unlock()
-			if ok {
-				resp.SetResponse(req)
-			}
-		} else {
-			ci.l.Unlock()
 		}
 
 		select {
