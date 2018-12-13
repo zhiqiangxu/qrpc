@@ -34,11 +34,13 @@ func (r *Frame) Context() context.Context {
 
 // FromClient returns true if frame is from clientconn
 func (r *Frame) FromClient() bool {
+	// RequestID odd means come from client
 	return r.RequestID%2 == 1
 }
 
 // FromServer returns true if frame is from serveconn
 func (r *Frame) FromServer() bool {
+	// RequestID even means com from server
 	return r.RequestID%2 == 0
 }
 
@@ -63,12 +65,10 @@ func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
 func (r *RequestFrame) Close() error {
 
 	if r.FromClient() {
-		// RequestID odd means come from client
 		ci := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 		return ci.SC.Close()
 	}
 
-	// RequestID even means com from server
 	cci := r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
 	cci.CC.closeRWC()
 	return nil
