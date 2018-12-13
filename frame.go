@@ -69,7 +69,12 @@ func (r *RequestFrame) Close() error {
 		return ci.SC.Close()
 	}
 
-	cci := r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
+	cci, ok := r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
+	// this is for compatibility with old qrpc client
+	if !ok {
+		ci := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+		return ci.SC.Close()
+	}
 	cci.CC.closeRWC()
 	return nil
 
