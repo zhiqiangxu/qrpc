@@ -322,6 +322,7 @@ func (sc *serveconn) readFrames() (err error) {
 				ci.l.Unlock()
 				if ok {
 					resp.SetResponse(req)
+					continue
 				}
 			} else {
 				ci.l.Unlock()
