@@ -200,6 +200,7 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 				time.Sleep(tempDelay)
 				continue
 			}
+			logError("qrpc: Accept fatal error", e)
 			return e
 		}
 		tempDelay = 0
