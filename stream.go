@@ -61,8 +61,9 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 }
 
 // Release all streams
-// it is called in clientconn when the connection is already closed
+// for clientconn it is called when the connection is already closed
 // otherwise may panic like close frameCh twice
+// for serveconn it is called after both readFrames/writeFrames are done
 func (cs *connstreams) Release() {
 	cs.pushstreams.Range(func(k, v interface{}) bool {
 		v.(*stream).Release()

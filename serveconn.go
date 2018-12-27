@@ -43,6 +43,7 @@ type serveconn struct {
 	writer       FrameWriter            // used by handlers
 	readFrameCh  chan readFrameResult   // written by conn.readFrames
 	writeFrameCh chan writeFrameRequest // written by FrameWriter
+	rwDone       uint32
 
 	// modified by Server
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
@@ -289,6 +290,8 @@ func (sc *serveconn) readFrames() (err error) {
 
 	ctx := sc.ctx
 	defer func() {
+		sc.tryFreeStreams()
+
 		if err == ErrFrameTooLarge {
 			logError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
 		}
@@ -348,6 +351,8 @@ func (sc *serveconn) readFrames() (err error) {
 func (sc *serveconn) writeFrames(timeout int) (err error) {
 
 	defer func() {
+		sc.tryFreeStreams()
+
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
@@ -402,6 +407,13 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
+	}
+}
+
+func (sc *serveconn) tryFreeStreams() {
+	count := atomic.AddUint32(&sc.rwDone, 1)
+	if count == 2 {
+		sc.cs.Release()
 	}
 }
 
