@@ -200,8 +200,9 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 				time.Sleep(tempDelay)
 				continue
 			}
-			logError("qrpc: Accept fatal error", e)
-			return e
+			logError("qrpc: Accept fatal error", e) // accept4: too many open files in system
+			time.Sleep(time.Second)                 // keep trying instead of quit
+			continue
 		}
 		tempDelay = 0
 
