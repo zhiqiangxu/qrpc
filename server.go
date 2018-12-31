@@ -83,6 +83,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {
+		logError("cmd not registered", r.Cmd)
 		r.Close()
 		return
 	}
