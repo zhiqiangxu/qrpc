@@ -289,9 +289,12 @@ check:
 			}
 		}
 
-		errStr := fmt.Sprintf("%v", err)
-		countlvs := []string{"method", "kickoff", "error", errStr}
-		srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
+		if srv.bindings[idx].CounterMetric != nil {
+			errStr := fmt.Sprintf("%v", err)
+			countlvs := []string{"method", "kickoff", "error", errStr}
+			srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
+		}
+
 		kicked = true
 
 		goto check
@@ -329,10 +332,10 @@ func (srv *Server) Shutdown() error {
 		srv.mu.Unlock()
 		return lnerr
 	}
+	srv.done = true
 	srv.mu.Unlock()
 
 	close(srv.doneChan)
-	srv.done = true
 
 	for _, f := range srv.shutdownFunc {
 		f()
