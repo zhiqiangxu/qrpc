@@ -486,6 +486,10 @@ func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (
 // Close the connection.
 func (sc *serveconn) Close() error {
 
+	if limiter := sc.server.closeRateLimiter[sc.idx]; limiter != nil {
+		limiter.Take()
+	}
+
 	ok, ch := sc.server.untrack(sc)
 	if !ok {
 		<-ch

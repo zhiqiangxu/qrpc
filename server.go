@@ -9,6 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"github.com/uber-go/ratelimit"
 )
 
 var (
@@ -104,9 +106,10 @@ type Server struct {
 	shutdownFunc []func()
 	done         bool
 
-	id2Conn    []sync.Map
-	activeConn []sync.Map // for better iterate when write, map[*serveconn]struct{}
-	throttle   []atomic.Value
+	id2Conn          []sync.Map
+	activeConn       []sync.Map // for better iterate when write, map[*serveconn]struct{}
+	throttle         []atomic.Value
+	closeRateLimiter []ratelimit.Limiter
 
 	wg sync.WaitGroup // wait group for goroutines
 
@@ -120,14 +123,22 @@ type throttle struct {
 
 // NewServer creates a server
 func NewServer(bindings []ServerBinding) *Server {
+	closeRateLimiter := make([]ratelimit.Limiter, len(bindings))
+	for idx, binding := range bindings {
+		if binding.MaxCloseRate != 0 {
+			closeRateLimiter[idx] = ratelimit.New(binding.MaxCloseRate)
+		}
+	}
 	return &Server{
-		bindings:   bindings,
-		upTime:     time.Now(),
-		listeners:  make(map[net.Listener]struct{}),
-		doneChan:   make(chan struct{}),
-		id2Conn:    make([]sync.Map, len(bindings)),
-		activeConn: make([]sync.Map, len(bindings)),
-		throttle:   make([]atomic.Value, len(bindings))}
+		bindings:         bindings,
+		upTime:           time.Now(),
+		listeners:        make(map[net.Listener]struct{}),
+		doneChan:         make(chan struct{}),
+		id2Conn:          make([]sync.Map, len(bindings)),
+		activeConn:       make([]sync.Map, len(bindings)),
+		throttle:         make([]atomic.Value, len(bindings)),
+		closeRateLimiter: closeRateLimiter,
+	}
 }
 
 // ListenAndServe starts listening on all bindings

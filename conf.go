@@ -13,6 +13,7 @@ type ServerBinding struct {
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
 	MaxFrameSize        int
+	MaxCloseRate        int // per second
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
 }
