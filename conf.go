@@ -1,6 +1,7 @@
 package qrpc
 
 import (
+	"net"
 	"time"
 
 	"github.com/go-kit/kit/metrics"
@@ -14,6 +15,7 @@ type ServerBinding struct {
 	DefaultWriteTimeout int
 	MaxFrameSize        int
 	MaxCloseRate        int // per second
+	ListenFunc          func(network, address string) (net.Listener, error)
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
 }

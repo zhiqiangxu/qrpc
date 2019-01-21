@@ -10,7 +10,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/uber-go/ratelimit"
+	"go.uber.org/ratelimit"
 )
 
 var (
@@ -142,11 +142,26 @@ func NewServer(bindings []ServerBinding) *Server {
 }
 
 // ListenAndServe starts listening on all bindings
-func (srv *Server) ListenAndServe() error {
+func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
+
+	if readyCh != nil {
+		if cap(readyCh) == 0 {
+			panic("readyCh is unbuffered")
+		}
+		defer close(readyCh)
+	}
 
 	for i, binding := range srv.bindings {
 
-		ln, err := net.Listen("tcp", binding.Addr)
+		var (
+			ln  net.Listener
+			err error
+		)
+		if binding.ListenFunc != nil {
+			ln, err = binding.ListenFunc("tcp", binding.Addr)
+		} else {
+			ln, err = net.Listen("tcp", binding.Addr)
+		}
 		if err != nil {
 			srv.Shutdown()
 			return err
@@ -159,6 +174,10 @@ func (srv *Server) ListenAndServe() error {
 
 	}
 
+	if readyCh != nil {
+		// notify listen ready
+		readyCh <- true
+	}
 	srv.wg.Wait()
 	return nil
 }
