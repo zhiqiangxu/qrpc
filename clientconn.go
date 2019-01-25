@@ -419,6 +419,10 @@ func (conn *Connection) readFrames() {
 
 	defer conn.loopCancelCtx()
 
+	// in case closeRWC is already called
+	if conn.rwc == nil {
+		return
+	}
 	reader := newFrameReader(conn.loopCtx, conn.rwc, conn.conf.ReadTimeout)
 	defer reader.Finalize()
 
