@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	addr = "0.0.0.0:8081"
+	addr = "0.0.0.0:8001"
 	n    = 100000
 )
 
@@ -51,33 +51,6 @@ func TestNonStream(t *testing.T) {
 
 }
 
-func TestNBWriter(t *testing.T) {
-
-	go startServer()
-	time.Sleep(time.Second * 2)
-
-	conf := qrpc.ConnectionConfig{WriteTimeout: 2}
-
-	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
-		fmt.Println(frame)
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	w := conn.GetWriter()
-	for i := 0; ; i++ {
-		fmt.Println(i)
-		w.StartWrite(uint64(i), HelloCmd, qrpc.NBFlag)
-		w.WriteBytes([]byte("TestWriter"))
-		err := w.EndWrite()
-		if err != nil {
-			panic(err)
-		}
-	}
-
-}
-
 func TestCancel(t *testing.T) {
 
 	go startServerForCancel()
@@ -98,7 +71,7 @@ func TestCancel(t *testing.T) {
 	}
 
 	fmt.Println("requestID", requestID)
-	err = conn.GetWriter().ResetFrame(requestID, 0)
+	err = conn.ResetFrame(requestID, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -334,7 +307,7 @@ func startServer() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
+	err := server.ListenAndServe(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -358,8 +331,9 @@ func startServerForCancel() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
+	err := server.ListenAndServe(nil)
 	if err != nil {
+		fmt.Println("ListenAndServe", err)
 		panic(err)
 	}
 }

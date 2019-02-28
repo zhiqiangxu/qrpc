@@ -347,6 +347,11 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	return requestID, resp, writer, nil
 }
 
+// ResetFrame resets a stream by requestID
+func (conn *Connection) ResetFrame(requestID uint64, reason Cmd) error {
+	return conn.getWriter().ResetFrame(requestID, reason)
+}
+
 // PoorManUUID generate a uint64 uuid
 func PoorManUUID(client bool) (result uint64) {
 	buf := make([]byte, 8)
