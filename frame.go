@@ -11,7 +11,7 @@ type Frame struct {
 	Flags     FrameFlag
 	Cmd       Cmd
 	Payload   []byte
-	Stream    *stream // non nil for the first frame in stream
+	Stream    *Stream // non nil for the first frame in stream
 }
 
 // FrameCh get the next frame ch

@@ -277,7 +277,7 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *servecon
 		rwc:          rwc,
 		idx:          idx,
 		untrackedCh:  make(chan struct{}),
-		cs:           newConnStreams(),
+		cs:           &ConnStreams{},
 		readFrameCh:  make(chan readFrameResult),
 		writeFrameCh: make(chan writeFrameRequest)}
 

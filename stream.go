@@ -7,19 +7,15 @@ import (
 	"unsafe"
 )
 
-// connstreams hosts all streams on connection
-type connstreams struct {
-	streams     sync.Map // map[uint64]*stream
-	pushstreams sync.Map // map[uint64]*stream
+// ConnStreams hosts all streams on connection
+type ConnStreams struct {
+	streams     sync.Map // map[uint64]*Stream
+	pushstreams sync.Map // map[uint64]*Stream
 
-}
-
-func newConnStreams() *connstreams {
-	return &connstreams{}
 }
 
 // GetStream tries to get the associated stream, called by framereader for rst frame
-func (cs *connstreams) GetStream(requestID uint64, flags FrameFlag) *stream {
+func (cs *ConnStreams) GetStream(requestID uint64, flags FrameFlag) *Stream {
 
 	var target *sync.Map
 	if flags.IsPush() {
@@ -32,12 +28,12 @@ func (cs *connstreams) GetStream(requestID uint64, flags FrameFlag) *stream {
 	if !ok {
 		return nil
 	}
-	return v.(*stream)
+	return v.(*Stream)
 }
 
-// get or create the associated stream atomically
+// CreateOrGetStream get or create the associated stream atomically
 // if PushFlag is set, should only call CreateOrGetStream if caller is framereader
-func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*stream, bool) {
+func (cs *ConnStreams) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
 
 	var target *sync.Map
 	if flags.IsPush() {
@@ -56,7 +52,7 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 		// TODO refactor stream!
 		s.reset()
 	}
-	return v.(*stream), loaded
+	return v.(*Stream), loaded
 
 }
 
@@ -64,18 +60,19 @@ func (cs *connstreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 // for clientconn it is called when the connection is already closed
 // otherwise may panic like close frameCh twice
 // for serveconn it is called after both readFrames/writeFrames are done
-func (cs *connstreams) Release() {
+func (cs *ConnStreams) Release() {
 	cs.pushstreams.Range(func(k, v interface{}) bool {
-		v.(*stream).Release()
+		v.(*Stream).Release()
 		return true
 	})
 	cs.streams.Range(func(k, v interface{}) bool {
-		v.(*stream).Release()
+		v.(*Stream).Release()
 		return true
 	})
 }
 
-type stream struct {
+// Stream is like session within one requestID
+type Stream struct {
 	ID         uint64
 	frameCh    chan *Frame // always not nil
 	ctx        context.Context
@@ -89,23 +86,24 @@ type stream struct {
 	closeNotify func() // called when stream is fully closed
 }
 
-func newStream(ctx context.Context, requestID uint64, closeNotify func()) *stream {
+func newStream(ctx context.Context, requestID uint64, closeNotify func()) *Stream {
 	ctx, cancelFunc := context.WithCancel(ctx)
-	s := &stream{ID: requestID, frameCh: make(chan *Frame), ctx: ctx, cancelFunc: cancelFunc, fullCloseCh: make(chan struct{}), closeNotify: closeNotify}
+	s := &Stream{ID: requestID, frameCh: make(chan *Frame), ctx: ctx, cancelFunc: cancelFunc, fullCloseCh: make(chan struct{}), closeNotify: closeNotify}
 
 	return s
 }
 
-func (s *stream) IsSelfClosed() bool {
+// IsSelfClosed checks whether self is closed
+func (s *Stream) IsSelfClosed() bool {
 
 	return atomic.LoadInt32(&s.closedSelf) != 0
 
 }
 
-// returns true if the stream has not been binded to any frame yet
+// TryBind returns true if the stream has not been binded to any frame yet
 // streamreader will first call TryBind, and if fail, call AddInFrame
 // not ts
-func (s *stream) TryBind(firstFrame *Frame) bool {
+func (s *Stream) TryBind(firstFrame *Frame) bool {
 
 	if s.binded {
 		return false
@@ -121,7 +119,7 @@ func (s *stream) TryBind(firstFrame *Frame) bool {
 
 // Done returns a channel for caller to wait for stream close
 // when channel returned, stream is cleanly closed
-func (s *stream) Done() <-chan struct{} {
+func (s *Stream) Done() <-chan struct{} {
 	return s.fullCloseCh
 }
 
@@ -130,7 +128,7 @@ func (s *stream) Done() <-chan struct{} {
 // return value means whether accepted by stream
 // if not accepted, framereader should wait until stream closed,
 // and call DeleteStream then CreateOrGetStream again
-func (s *stream) AddInFrame(frame *Frame) bool {
+func (s *Stream) AddInFrame(frame *Frame) bool {
 	if atomic.LoadInt32(&s.closedPeer) != 0 {
 		return false
 	}
@@ -144,7 +142,7 @@ func (s *stream) AddInFrame(frame *Frame) bool {
 	}
 }
 
-func (s *stream) closePeerIfNeeded(flags FrameFlag) {
+func (s *Stream) closePeerIfNeeded(flags FrameFlag) {
 	if flags.IsPush() {
 		atomic.StoreInt32(&s.closedSelf, 1)
 	}
@@ -159,13 +157,13 @@ func (s *stream) closePeerIfNeeded(flags FrameFlag) {
 	}
 }
 
-// AddInFrame tries to add an nonpushed outframe to stream
+// AddOutFrame tries to add an nonpushed outframe to stream
 // framewriter will blindly call AddOutFrame
 // return value means whether accepted by stream
 // if not accepted, framewriter should throw away the frame
 // if accepted, framewriter can go ahead actually sending the frame
 // for rst frame, return false mean there's no need to send rst frame
-func (s *stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
+func (s *Stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 
 	isRst := flags.IsRst()
 
@@ -193,7 +191,8 @@ func (s *stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 	return true
 }
 
-func (s *stream) ResetByPeer() {
+// ResetByPeer resets a stream by peer
+func (s *Stream) ResetByPeer() {
 	swapped := atomic.CompareAndSwapInt32(&s.closedPeer, 0, 1)
 	if swapped {
 		close(s.frameCh)
@@ -202,7 +201,7 @@ func (s *stream) ResetByPeer() {
 	s.reset()
 }
 
-func (s *stream) afterDone() {
+func (s *Stream) afterDone() {
 
 	swapped := atomic.CompareAndSwapInt32(&s.fullClosed, 0, 1)
 
@@ -214,7 +213,7 @@ func (s *stream) afterDone() {
 
 }
 
-func (s *stream) reset() {
+func (s *Stream) reset() {
 
 	s.cancelFunc()
 
@@ -222,7 +221,7 @@ func (s *stream) reset() {
 
 // Release is only called by clientconn for reconnect
 // it's only safe to call when read/write goroutines are finished beforehand
-func (s *stream) Release() {
+func (s *Stream) Release() {
 	s.ResetByPeer()
 	s.afterDone()
 }

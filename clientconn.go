@@ -44,7 +44,7 @@ type Connection struct {
 	loopCancelCtx context.CancelFunc
 	loopWG        *sync.WaitGroup
 
-	cs *connstreams
+	cs *ConnStreams
 }
 
 // Response for response frames
@@ -129,7 +129,7 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 	c := &Connection{
 		rwc: rwc, addrs: addr, conf: conf, subscriber: f,
 		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
-		cs: newConnStreams(), ctx: ctx, cancelCtx: cancelCtx,
+		cs: &ConnStreams{}, ctx: ctx, cancelCtx: cancelCtx,
 		reconnect: reconnect}
 
 	if conf.Handler != nil {
@@ -386,7 +386,7 @@ func (conn *Connection) closeRWC() {
 	conn.respes = make(map[uint64]*response)
 
 	conn.cs.Release()
-	conn.cs = newConnStreams()
+	conn.cs = &ConnStreams{}
 }
 
 // Close closes the qrpc connection

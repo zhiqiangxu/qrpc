@@ -34,7 +34,7 @@ func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int, maxFr
 }
 
 // ReadFrame will only return the first frame in stream
-func (dfr *defaultFrameReader) ReadFrame(cs *connstreams) (*Frame, error) {
+func (dfr *defaultFrameReader) ReadFrame(cs *ConnStreams) (*Frame, error) {
 start:
 	f, err := dfr.readFrame()
 	if err != nil {

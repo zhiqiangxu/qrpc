@@ -32,7 +32,7 @@ type serveconn struct {
 
 	idx int
 
-	cs *connstreams
+	cs *ConnStreams
 
 	// rwc is the underlying network connection.
 	// This is never wrapped by other types and is the value given out
