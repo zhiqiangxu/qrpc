@@ -5,6 +5,7 @@
 > *  `blocking` or `nonblocking`
 > *  `streaming` or `nonstreaming`
 > *  `server push`
+> *  `overlay network` (refer to `ws/README.md`)
 
 By default each frame is `blocking` and `nonstreaming`, this allows traditional block-in-header sequencial behaviour like `http/1.1`, but you can make it behave tremendously different by attach flags to your frames!
 
