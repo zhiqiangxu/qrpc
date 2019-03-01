@@ -39,6 +39,7 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/qrpc", func(w http.ResponseWriter, r *http.Request) {
+
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
 			qrpc.LogError("upgrader.Upgrade err", err)
@@ -61,6 +62,12 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
 	}
+
+	go func() {
+		err := httpServer.Serve(l)
+		qrpc.LogError("httpServer.Serve err", err)
+	}()
+
 	return
 }
 
