@@ -86,14 +86,21 @@ func (r *response) Close() {
 }
 
 // NewConnection constructs a *Connection without reconnect ability
-func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (*Connection, error) {
-	rwc, err := net.DialTimeout("tcp", addr, conf.DialTimeout)
-	if err != nil {
-		logError("NewConnection Dial", err)
-		return nil, err
+func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (conn *Connection, err error) {
+	var rwc net.Conn
+	if conf.OverlayNetwork != nil {
+		rwc, err = conf.OverlayNetwork(addr, conf.DialTimeout)
+	} else {
+		rwc, err = net.DialTimeout("tcp", addr, conf.DialTimeout)
 	}
 
-	return newConnection(rwc, []string{addr}, conf, f, false), nil
+	if err != nil {
+		logError("NewConnection Dial", err)
+		return
+	}
+
+	conn = newConnection(rwc, []string{addr}, conf, f, false)
+	return
 }
 
 // NewConnectionWithReconnect constructs a *Connection with reconnect ability

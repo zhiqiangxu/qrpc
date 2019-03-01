@@ -26,8 +26,9 @@ type SubFunc func(*Connection, *Frame)
 
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {
-	WriteTimeout int
-	ReadTimeout  int
-	DialTimeout  time.Duration
-	Handler      Handler
+	WriteTimeout   int
+	ReadTimeout    int
+	DialTimeout    time.Duration
+	Handler        Handler
+	OverlayNetwork func(address string, timeout time.Duration) (net.Conn, error)
 }
