@@ -169,7 +169,7 @@ func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
 
 		idx := i
 		GoFunc(&srv.wg, func() {
-			srv.serve(tcpKeepAliveListener{ln.(*net.TCPListener)}, idx)
+			srv.Serve(ln.(*net.TCPListener), idx)
 		})
 
 	}
@@ -182,20 +182,28 @@ func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
 	return nil
 }
 
+// Listener defines required listener methods for qrpc
+type Listener interface {
+	net.Listener
+	AcceptTCP() (*net.TCPConn, error)
+	SetDeadline(t time.Time) error
+}
+
 // ErrServerClosed is returned by the Server's Serve, ListenAndServe,
 // methods after a call to Shutdown or Close.
 var ErrServerClosed = errors.New("qrpc: Server closed")
 
 var defaultAcceptTimeout = 5 * time.Second
 
-// serve accepts incoming connections on the Listener l, creating a
+// Serve accepts incoming connections on the Listener qrpcListener, creating a
 // new service goroutine for each. The service goroutines read requests and
 // then call srv.Handler to reply to them.
 //
-// serve always returns a non-nil error. After Shutdown or Close, the
+// Serve always returns a non-nil error. After Shutdown or Close, the
 // returned error is ErrServerClosed.
-func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
+func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 
+	l := tcpKeepAliveListener{qrpcListener}
 	defer l.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 
@@ -247,7 +255,7 @@ func (srv *Server) serve(l tcpKeepAliveListener, idx int) error {
 // tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections.
 type tcpKeepAliveListener struct {
-	*net.TCPListener
+	Listener
 }
 
 func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
