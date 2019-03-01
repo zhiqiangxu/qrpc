@@ -86,7 +86,7 @@ func (o *qrpcOverWS) Accept() (conn net.Conn, err error) {
 			err = o.ctx.Err()
 			return
 		case <-ctx.Done():
-			err = ctx.Err()
+			err = qrpc.ErrAcceptTimedout
 			return
 		}
 	}
