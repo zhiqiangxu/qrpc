@@ -169,7 +169,11 @@ func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
 
 		idx := i
 		GoFunc(&srv.wg, func() {
-			srv.Serve(ln.(*net.TCPListener), idx)
+			if binding.OverlayNetwork != nil {
+				srv.Serve(binding.OverlayNetwork(ln), idx)
+			} else {
+				srv.Serve(ln.(*net.TCPListener), idx)
+			}
 		})
 
 	}
@@ -185,15 +189,19 @@ func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
 // Listener defines required listener methods for qrpc
 type Listener interface {
 	net.Listener
-	AcceptTCP() (*net.TCPConn, error)
 	SetDeadline(t time.Time) error
 }
 
-// ErrServerClosed is returned by the Server's Serve, ListenAndServe,
-// methods after a call to Shutdown or Close.
-var ErrServerClosed = errors.New("qrpc: Server closed")
+var (
 
-var defaultAcceptTimeout = 5 * time.Second
+	// ErrServerClosed is returned by the Server's Serve, ListenAndServe,
+	// methods after a call to Shutdown or Close.
+	ErrServerClosed = errors.New("qrpc: Server closed")
+	// ErrListenerAcceptReturnType when Listener.Accept doesn't return TCPConn
+	ErrListenerAcceptReturnType = errors.New("qrpc: Listener.Accept doesn't return TCPConn")
+
+	defaultAcceptTimeout = 5 * time.Second
+)
 
 // Serve accepts incoming connections on the Listener qrpcListener, creating a
 // new service goroutine for each. The service goroutines read requests and
@@ -258,14 +266,32 @@ type tcpKeepAliveListener struct {
 	Listener
 }
 
-func (ln tcpKeepAliveListener) Accept() (net.Conn, error) {
-	tc, err := ln.AcceptTCP()
+// TCPConn in qrpc's aspect
+type TCPConn interface {
+	net.Conn
+	SetKeepAlive(keepalive bool) error
+	SetKeepAlivePeriod(d time.Duration) error
+}
+
+func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+	c, err = ln.Listener.Accept()
 	if err != nil {
-		return nil, err
+		return
 	}
+
+	var (
+		tc TCPConn
+		ok bool
+	)
+	if tc, ok = c.(TCPConn); !ok {
+		err = ErrListenerAcceptReturnType
+		return
+	}
+
 	tc.SetKeepAlive(true)
 	tc.SetKeepAlivePeriod(20 * time.Second)
-	return tc, nil
+
+	return
 }
 
 func (srv *Server) trackListener(ln net.Listener, add bool) {
