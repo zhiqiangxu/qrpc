@@ -85,7 +85,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {
-		logError("cmd not registered", r.Cmd)
+		LogError("cmd not registered", r.Cmd)
 		r.Close()
 		return
 	}
@@ -243,11 +243,11 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				logError("qrpc: Accept error", e, "retrying in", tempDelay)
+				LogError("qrpc: Accept error", e, "retrying in", tempDelay)
 				time.Sleep(tempDelay)
 				continue
 			}
-			logError("qrpc: Accept fatal error", e) // accept4: too many open files in system
+			LogError("qrpc: Accept fatal error", e) // accept4: too many open files in system
 			time.Sleep(time.Second)                 // keep trying instead of quit
 			continue
 		}
@@ -344,7 +344,7 @@ check:
 		if !ok {
 			<-ch
 		}
-		logDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
+		LogDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
 
 		err := vsc.closeUntracked()
 		if err != nil {

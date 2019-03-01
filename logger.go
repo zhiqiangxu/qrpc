@@ -19,7 +19,8 @@ const (
 // Logger is exported logger interface
 var Logger logger
 
-func logInfo(msg ...interface{}) {
+// LogInfo for info log
+func LogInfo(msg ...interface{}) {
 	if Logger == nil {
 		fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
 		return
@@ -27,7 +28,8 @@ func logInfo(msg ...interface{}) {
 	Logger.Info(msg...)
 }
 
-func logError(msg ...interface{}) {
+// LogError for error log
+func LogError(msg ...interface{}) {
 	if Logger == nil {
 		fmt.Fprint(os.Stderr, time.Now().String(), sep, fmt.Sprintln(msg...))
 		return
@@ -35,7 +37,8 @@ func logError(msg ...interface{}) {
 	Logger.Error(msg...)
 }
 
-func logDebug(msg ...interface{}) {
+// LogDebug for debug log
+func LogDebug(msg ...interface{}) {
 	if Logger == nil {
 		fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
 		return

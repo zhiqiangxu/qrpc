@@ -95,7 +95,7 @@ func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (conn *Connect
 	}
 
 	if err != nil {
-		logError("NewConnection Dial", err)
+		LogError("NewConnection Dial", err)
 		return
 	}
 
@@ -115,7 +115,7 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 
 	rwc, err := net.DialTimeout("tcp", copy[len(copy)-1], conf.DialTimeout)
 	if err != nil {
-		logError("initconnect DialTimeout", err)
+		LogError("initconnect DialTimeout", err)
 		rwc = nil
 	}
 	return newConnection(rwc, copy, conf, f, true)
@@ -193,7 +193,7 @@ func (conn *Connection) connect() error {
 
 		rwc, err := net.DialTimeout("tcp", addr, conn.conf.DialTimeout)
 		if err != nil {
-			logError("connect DialTimeout", err)
+			LogError("connect DialTimeout", err)
 		} else {
 			ctx, cancelCtx := context.WithCancel(conn.ctx)
 			conn.mu.Lock()
@@ -271,7 +271,7 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) 
 	flags = flags.ToStream()
 	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
-		logError("writeFirstFrame", err)
+		LogError("writeFirstFrame", err)
 		return nil, nil, err
 	}
 	return newStreamWriter(writer, requestID, flags), resp, nil
@@ -460,11 +460,11 @@ func (conn *Connection) readFrames() {
 			conn.mu.Unlock()
 			if conn.conf.Handler != nil {
 				if !frame.FromServer() {
-					logError("clientconn get RequestFrame.RequestID not even")
+					LogError("clientconn get RequestFrame.RequestID not even")
 					return
 				}
 				if !frame.Flags.IsNonBlock() {
-					logError("clientconn get RequestFrame block")
+					LogError("clientconn get RequestFrame block")
 					return
 				}
 				GoFunc(conn.loopWG, func() {
@@ -474,7 +474,7 @@ func (conn *Connection) readFrames() {
 				continue
 			}
 
-			logError("dangling resp", frame.RequestID)
+			LogError("dangling resp", frame.RequestID)
 
 			continue
 		}
@@ -492,7 +492,7 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		logError("Connection.handleRequestPanic", err, string(buf))
+		LogError("Connection.handleRequestPanic", err, string(buf))
 	}
 
 	s := frame.Stream
@@ -502,7 +502,7 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
 		err := writer.EndWrite()
 		if err != nil {
-			logDebug("Connection.send error frame", err, frame)
+			LogDebug("Connection.send error frame", err, frame)
 		}
 	}
 }
@@ -546,7 +546,7 @@ func (conn *Connection) writeFrames() (err error) {
 			_, err := writer.Write(dfw.GetWbuf())
 			res.result <- err
 			if err != nil {
-				logError("clientconn Write", err)
+				LogError("clientconn Write", err)
 				return err
 			}
 		case <-conn.loopCtx.Done():

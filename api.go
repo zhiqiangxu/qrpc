@@ -48,7 +48,7 @@ func NewAPI(endpoints []string, conf ConnectionConfig, weights []int) API {
 		idxMap[endpoint] = idx
 		conn, err := NewConnection(endpoint, conf, nil)
 		if err != nil {
-			logError("NewConnection fail", endpoint, err)
+			LogError("NewConnection fail", endpoint, err)
 			continue
 		}
 		d.conns.Store(idx, conn)
@@ -205,7 +205,7 @@ func (api *defaultAPI) reconnectIdx(idx int) (*Connection, error) {
 	}
 	conn, err := NewConnection(api.endpoints[idx], api.conf, nil)
 	if err != nil {
-		logError("NewConnection fail", err)
+		LogError("NewConnection fail", err)
 		return nil, err
 	}
 
@@ -242,7 +242,7 @@ func (api *defaultAPI) getIdx() int {
 		}
 	}
 
-	logError("getIdx bug")
+	LogError("getIdx bug")
 	return 0
 }
 

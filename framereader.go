@@ -60,7 +60,7 @@ start:
 		}
 		s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 		if !loaded {
-			logInfo(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
+			LogInfo(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
 		}
 
 		if s.TryBind(f) {
@@ -91,7 +91,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	flags := FrameFlag(cmdAndFlags >> 24)
 
 	if dfr.maxFrameSize > 0 && size > uint32(dfr.maxFrameSize) {
-		logError("ErrFrameTooLarge", "size", size, "cmd", cmd, "requestID", requestID)
+		LogError("ErrFrameTooLarge", "size", size, "cmd", cmd, "requestID", requestID)
 		return nil, ErrFrameTooLarge
 	}
 	if size < 12 {

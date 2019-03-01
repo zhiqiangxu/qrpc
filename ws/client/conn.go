@@ -24,9 +24,9 @@ func DialConn(address string, timeout time.Duration) (nc net.Conn, err error) {
 			return net.DialTimeout(network, addr, timeout)
 		},
 	}
-	wc, resp, err = dialer.Dial("http://"+address+"/qrpc", http.Header{})
+	wc, resp, err = dialer.Dial("ws://"+address+"/qrpc", http.Header{})
 	if err != nil {
-		qrpc.Logger.Error("dialer.Dial err", err, "resp", resp)
+		qrpc.LogError("dialer.Dial err", err, "resp", resp)
 		return
 	}
 

@@ -130,7 +130,7 @@ func (sc *serveconn) serve() {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			logError("connection panic", sc.rwc.RemoteAddr().String(), err, buf)
+			LogError("connection panic", sc.rwc.RemoteAddr().String(), err, buf)
 		}
 		sc.Close()
 		sc.wg.Wait()
@@ -215,7 +215,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		logError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, string(buf))
+		LogError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, string(buf))
 
 	}
 
@@ -226,7 +226,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
 		err := writer.EndWrite()
 		if err != nil {
-			logDebug("send error frame", err, sc.rwc.RemoteAddr().String(), frame)
+			LogDebug("send error frame", err, sc.rwc.RemoteAddr().String(), frame)
 		}
 	}
 
@@ -293,7 +293,7 @@ func (sc *serveconn) readFrames() (err error) {
 		sc.tryFreeStreams()
 
 		if err == ErrFrameTooLarge {
-			logError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
+			LogError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
 		}
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
@@ -384,7 +384,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
 				if !loaded {
-					logInfo(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
+					LogInfo(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
@@ -394,7 +394,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 
 			_, err = writer.Write(dfw.GetWbuf())
 			if err != nil {
-				logDebug(unsafe.Pointer(sc), "serveconn Write", err)
+				LogDebug(unsafe.Pointer(sc), "serveconn Write", err)
 				sc.Close()
 				res.result <- err
 
