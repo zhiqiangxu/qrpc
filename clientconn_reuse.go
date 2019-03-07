@@ -12,7 +12,7 @@ import (
 func NewReusedConnection(addr string, conf ConnectionConfig, f SubFunc) (*Connection, error) {
 	rwc, err := reuse.DialWithTimeout("tcp", "", addr, conf.DialTimeout)
 	if err != nil {
-		logError("NewConnection Dial", err)
+		LogError("NewConnection Dial", err)
 		return nil, err
 	}
 
