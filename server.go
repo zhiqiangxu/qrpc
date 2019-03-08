@@ -447,6 +447,16 @@ func (srv *Server) WalkConnByID(idx int, ids []string, f func(FrameWriter, *Conn
 	}
 }
 
+// GetConnectionInfoByID returns the ConnectionInfo for idx+id
+func (srv *Server) GetConnectionInfoByID(idx int, id string) *ConnectionInfo {
+	v, ok := srv.id2Conn[idx].Load(id)
+	if !ok {
+		return nil
+	}
+
+	return v.(*serveconn).ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+}
+
 // WalkConn walks through each serveconn
 func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) {
 	srv.activeConn[idx].Range(func(k, v interface{}) bool {
