@@ -332,9 +332,11 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) *servecon
 	return sc
 }
 
+var kickOrder uint64
+
 // bindID bind the id to sc
 // it is concurrent safe
-func (srv *Server) bindID(sc *serveconn, id string) (kicked bool) {
+func (srv *Server) bindID(sc *serveconn, id string) (kick bool, ko uint64) {
 
 	idx := sc.idx
 
@@ -365,11 +367,13 @@ check:
 			srv.bindings[idx].CounterMetric.With(countlvs...).Add(1)
 		}
 
-		kicked = true
+		atomic.AddUint64(&kickOrder, 1)
+		kick = true
 
 		goto check
 	}
 
+	ko = atomic.LoadUint64(&kickOrder)
 	return
 }
 

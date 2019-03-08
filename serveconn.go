@@ -233,7 +233,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 }
 
 // SetID sets id for serveconn
-func (sc *serveconn) SetID(id string) bool {
+func (sc *serveconn) SetID(id string) (bool, uint64) {
 	if id == "" {
 		panic("empty id not allowed")
 	}
