@@ -89,6 +89,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	cmdAndFlags := binary.BigEndian.Uint32(header[12:])
 	cmd := Cmd(cmdAndFlags & 0xffffff)
 	flags := FrameFlag(cmdAndFlags >> 24)
+	LogDebug("size", size, "requestID", requestID, "cmd", cmd, "flags", flags)
 
 	if dfr.maxFrameSize > 0 && size > uint32(dfr.maxFrameSize) {
 		LogError("ErrFrameTooLarge", "size", size, "cmd", cmd, "requestID", requestID)
