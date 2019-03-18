@@ -17,6 +17,7 @@ type ServerBinding struct {
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)
 	OverlayNetwork      func(net.Listener) Listener
+	OnKickCB            func(w FrameWriter)
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
 }

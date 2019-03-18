@@ -348,7 +348,7 @@ check:
 		if vsc == sc {
 			return
 		}
-		ok, ch := srv.untrack(vsc)
+		ok, ch := srv.untrack(vsc, true)
 		if !ok {
 			<-ch
 		}
@@ -377,7 +377,7 @@ check:
 	return
 }
 
-func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
+func (srv *Server) untrack(sc *serveconn, kicked bool) (bool, <-chan struct{}) {
 
 	locked := atomic.CompareAndSwapUint32(&sc.untrack, 0, 1)
 	if !locked {
@@ -391,6 +391,11 @@ func (srv *Server) untrack(sc *serveconn) (bool, <-chan struct{}) {
 	}
 	srv.activeConn[idx].Delete(sc)
 
+	if kicked {
+		if srv.bindings[idx].OnKickCB != nil {
+			srv.bindings[idx].OnKickCB(sc.GetWriter())
+		}
+	}
 	close(sc.untrackedCh)
 	return true, sc.untrackedCh
 }

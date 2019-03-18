@@ -490,7 +490,7 @@ func (sc *serveconn) Close() error {
 		limiter.Take()
 	}
 
-	ok, ch := sc.server.untrack(sc)
+	ok, ch := sc.server.untrack(sc, false)
 	if !ok {
 		<-ch
 	}
