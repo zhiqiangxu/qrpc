@@ -474,15 +474,14 @@ func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) 
 	})
 }
 
-func (srv *Server) closeListenersLocked() error {
-	var err error
+func (srv *Server) closeListenersLocked() (err error) {
 	for ln := range srv.listeners {
-		if cerr := ln.Close(); cerr != nil && err == nil {
-			err = cerr
+		if err = ln.Close(); err != nil {
+			return
 		}
 		delete(srv.listeners, ln)
 	}
-	return err
+	return
 }
 
 // waitThrottle is concurrent safe
