@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"reflect"
 	"runtime"
 	"strconv"
 	"sync"
@@ -298,6 +299,13 @@ func (sc *serveconn) readFrames() (err error) {
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
+			if err != nil {
+				if binding.OverlayNetwork != nil {
+					LogError("readFrames err", err, reflect.TypeOf(err))
+					errStr = fmt.Sprintf("readFrames err for OverlayNetwork")
+				}
+			}
+
 			countlvs := []string{"method", "readFrames", "error", errStr}
 			binding.CounterMetric.With(countlvs...).Add(1)
 		}
