@@ -147,10 +147,11 @@ func (srv *Server) ListenAndServe() error {
 
 	var g run.Group
 
-	for i, binding := range srv.bindings {
-
+	for i := range srv.bindings {
+		idx := i
+		binding := srv.bindings[i]
 		g.Add(func() error {
-			return srv.listenAndServe(i, binding)
+			return srv.listenAndServe(idx, binding)
 		}, func(err error) {
 			serr := srv.Shutdown()
 			LogInfo("err", err, "serr", serr)
