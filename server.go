@@ -10,6 +10,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/oklog/run"
 	"go.uber.org/ratelimit"
 )
 
@@ -142,48 +143,44 @@ func NewServer(bindings []ServerBinding) *Server {
 }
 
 // ListenAndServe starts listening on all bindings
-func (srv *Server) ListenAndServe(readyCh chan<- bool) error {
+func (srv *Server) ListenAndServe() error {
 
-	if readyCh != nil {
-		if cap(readyCh) == 0 {
-			panic("readyCh is unbuffered")
-		}
-		defer close(readyCh)
-	}
+	var g run.Group
 
 	for i, binding := range srv.bindings {
 
-		var (
-			ln  net.Listener
-			err error
-		)
-		if binding.ListenFunc != nil {
-			ln, err = binding.ListenFunc("tcp", binding.Addr)
-		} else {
-			ln, err = net.Listen("tcp", binding.Addr)
-		}
-		if err != nil {
-			srv.Shutdown()
-			return err
-		}
-
-		idx := i
-		GoFunc(&srv.wg, func() {
-			if binding.OverlayNetwork != nil {
-				srv.Serve(binding.OverlayNetwork(ln), idx)
-			} else {
-				srv.Serve(ln.(*net.TCPListener), idx)
-			}
+		g.Add(func() error {
+			return srv.listenAndServe(i, binding)
+		}, func(err error) {
+			serr := srv.Shutdown()
+			LogInfo("err", err, "serr", serr)
 		})
-
 	}
 
-	if readyCh != nil {
-		// notify listen ready
-		readyCh <- true
+	return g.Run()
+}
+
+func (srv *Server) listenAndServe(idx int, binding ServerBinding) (err error) {
+	var (
+		ln net.Listener
+	)
+
+	if binding.ListenFunc != nil {
+		ln, err = binding.ListenFunc("tcp", binding.Addr)
+	} else {
+		ln, err = net.Listen("tcp", binding.Addr)
 	}
-	srv.wg.Wait()
-	return nil
+	if err != nil {
+		return
+	}
+
+	if binding.OverlayNetwork != nil {
+		err = srv.Serve(binding.OverlayNetwork(ln), idx)
+	} else {
+		err = srv.Serve(ln.(*net.TCPListener), idx)
+	}
+
+	return
 }
 
 // Listener defines required listener methods for qrpc
@@ -406,11 +403,19 @@ var shutdownPollInterval = 500 * time.Millisecond
 func (srv *Server) Shutdown() error {
 
 	srv.mu.Lock()
-	lnerr := srv.closeListenersLocked()
-	if lnerr != nil {
+	if srv.done {
 		srv.mu.Unlock()
-		return lnerr
+		goto done
 	}
+
+	{
+		lnerr := srv.closeListenersLocked()
+		if lnerr != nil {
+			srv.mu.Unlock()
+			return lnerr
+		}
+	}
+
 	srv.done = true
 	srv.mu.Unlock()
 
@@ -420,6 +425,7 @@ func (srv *Server) Shutdown() error {
 		f()
 	}
 
+done:
 	srv.wg.Wait()
 
 	return nil
