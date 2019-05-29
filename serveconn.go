@@ -283,6 +283,11 @@ type writeFrameRequest struct {
 // A gate lets two goroutines coordinate their activities.
 type gate chan struct{}
 
+const (
+	errStrReadFramesForOverlayNetwork  = "readFrames err for OverlayNetwork"
+	errStrWriteFramesForOverlayNetwork = "writeFrames err for OverlayNetwork"
+)
+
 func (g gate) Done() { g <- struct{}{} }
 
 func (sc *serveconn) readFrames() (err error) {
@@ -302,7 +307,7 @@ func (sc *serveconn) readFrames() (err error) {
 			if err != nil {
 				if binding.OverlayNetwork != nil {
 					LogError("readFrames err", err, reflect.TypeOf(err))
-					errStr = fmt.Sprintf("readFrames err for OverlayNetwork")
+					errStr = errStrReadFramesForOverlayNetwork
 				}
 			}
 
@@ -364,6 +369,9 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 		binding := sc.server.bindings[sc.idx]
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
+			if err != nil && binding.OverlayNetwork != nil {
+				errStr = errStrWriteFramesForOverlayNetwork
+			}
 			countlvs := []string{"method", "writeFrames", "error", errStr}
 			binding.CounterMetric.With(countlvs...).Add(1)
 		}
