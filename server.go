@@ -154,7 +154,7 @@ func (srv *Server) ListenAndServe() error {
 			return srv.listenAndServe(idx, binding)
 		}, func(err error) {
 			serr := srv.Shutdown()
-			LogInfo("err", err, "serr", serr)
+			LogError("err", err, "serr", serr)
 		})
 	}
 
