@@ -20,6 +20,7 @@ type ServerBinding struct {
 	OnKickCB            func(w FrameWriter)
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
+	ln                  Listener
 }
 
 // SubFunc for subscribe callback

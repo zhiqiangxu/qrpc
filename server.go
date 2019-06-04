@@ -143,15 +143,50 @@ func NewServer(bindings []ServerBinding) *Server {
 }
 
 // ListenAndServe starts listening on all bindings
-func (srv *Server) ListenAndServe() error {
+func (srv *Server) ListenAndServe() (err error) {
 
+	err = srv.ListenAll()
+	if err != nil {
+		return
+	}
+	return srv.ServeAll()
+}
+
+// ListenAll for listen on all bindings
+func (srv *Server) ListenAll() (err error) {
+
+	for i, binding := range srv.bindings {
+
+		var ln net.Listener
+
+		if binding.ListenFunc != nil {
+			ln, err = binding.ListenFunc("tcp", binding.Addr)
+		} else {
+			ln, err = net.Listen("tcp", binding.Addr)
+		}
+		if err != nil {
+			return
+		}
+
+		if binding.OverlayNetwork != nil {
+			srv.bindings[i].ln = binding.OverlayNetwork(ln)
+		} else {
+			srv.bindings[i].ln = ln.(*net.TCPListener)
+		}
+	}
+
+	return
+}
+
+// ServeAll for serve on all bindings
+func (srv *Server) ServeAll() error {
 	var g run.Group
 
 	for i := range srv.bindings {
 		idx := i
 		binding := srv.bindings[i]
 		g.Add(func() error {
-			return srv.listenAndServe(idx, binding)
+			return srv.Serve(binding.ln, idx)
 		}, func(err error) {
 			serr := srv.Shutdown()
 			LogError("err", err, "serr", serr)
@@ -159,29 +194,6 @@ func (srv *Server) ListenAndServe() error {
 	}
 
 	return g.Run()
-}
-
-func (srv *Server) listenAndServe(idx int, binding ServerBinding) (err error) {
-	var (
-		ln net.Listener
-	)
-
-	if binding.ListenFunc != nil {
-		ln, err = binding.ListenFunc("tcp", binding.Addr)
-	} else {
-		ln, err = net.Listen("tcp", binding.Addr)
-	}
-	if err != nil {
-		return
-	}
-
-	if binding.OverlayNetwork != nil {
-		err = srv.Serve(binding.OverlayNetwork(ln), idx)
-	} else {
-		err = srv.Serve(ln.(*net.TCPListener), idx)
-	}
-
-	return
 }
 
 // Listener defines required listener methods for qrpc
