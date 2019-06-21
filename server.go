@@ -47,6 +47,9 @@ func (f HandlerFunc) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	f(w, r)
 }
 
+// MiddlewareFunc will return false to abort
+type MiddlewareFunc func(FrameWriter, *RequestFrame) bool
+
 // ServeMux is qrpc request multiplexer.
 type ServeMux struct {
 	mu sync.RWMutex
@@ -57,13 +60,13 @@ type ServeMux struct {
 func NewServeMux() *ServeMux { return new(ServeMux) }
 
 // HandleFunc registers the handler function for the given pattern.
-func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *RequestFrame)) {
-	mux.Handle(cmd, HandlerFunc(handler))
+func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *RequestFrame), middleware ...MiddlewareFunc) {
+	mux.Handle(cmd, HandlerFunc(handler), middleware...)
 }
 
 // Handle registers the handler for the given pattern.
 // If a handler already exists for pattern, handle panics.
-func (mux *ServeMux) Handle(cmd Cmd, handler Handler) {
+func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFunc) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 
@@ -77,7 +80,7 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler) {
 	if mux.m == nil {
 		mux.m = make(map[Cmd]Handler)
 	}
-	mux.m[cmd] = handler
+	mux.m[cmd] = HandlerWithMW(handler, middleware...)
 }
 
 // ServeQRPC dispatches the request to the handler whose
