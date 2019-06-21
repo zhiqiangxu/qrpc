@@ -307,7 +307,7 @@ func startServer() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe(nil)
+	err := server.ListenAndServe()
 	if err != nil {
 		panic(err)
 	}
@@ -331,7 +331,7 @@ func startServerForCancel() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe(nil)
+	err := server.ListenAndServe()
 	if err != nil {
 		fmt.Println("ListenAndServe", err)
 		panic(err)
