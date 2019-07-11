@@ -1,6 +1,6 @@
 # qrpc, tiny but powerful rpc framework
 
-**qrpc** makes it tremendously easy to to perform rpc by offering 3 core features:
+**qrpc** makes it tremendously easy to to perform rpc by offering 4 core features:
 
 > *  `blocking` or `nonblocking`
 > *  `streaming` or `nonstreaming`
