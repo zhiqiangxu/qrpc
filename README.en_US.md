@@ -1,41 +1,19 @@
-# qrpc, 轻量级的通用长链接框架
+# qrpc, tiny but powerful rpc framework
 
-**qrpc** 提供完整的服务端及客户端功能，并支持以下3种`rpc`模式使得长链接变得极为容易:
+**qrpc** makes it tremendously easy to to perform rpc by offering 4 core features:
 
-> *  `阻塞` 或 `非阻塞`
-> *  `流式` 或 `非流式`
-> *  `主动推送`
+> *  `blocking` or `nonblocking`
+> *  `streaming` or `nonstreaming`
+> *  `server push`
+> *  `overlay network` (refer to `ws/README.md` for detail)
 
-默认是阻塞模式，也就是同一个长链接的请求是串行处理，类似`http/1.1`，但是通过微小的改动就可以切换到其他模式。
-
-此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`。
-
-------
-
-# 协议设计
-
-`qrpc`提供`请求->响应`以及`主动推送`两大类的交互能力。
-
-`请求->响应`又分为「`阻塞` 或 `非阻塞`」以及「`流式` 或 `非流式`」。
-
-`qrpc`的`请求`和`响应`有相同的结构：`帧`，即代码中的`Frame`。
-
-每个帧包括`8`字节的`唯一标识`，`1`字节的`flag`，`3`字节的`命令`，以及不超过可配置上限长度的`负荷`。
-
-客户端会为每个`请求帧`自动生成`8`字节的`唯一标识`，服务端对应的`响应帧`会有相同的唯一标识。
-
-通过这种方式，一个长链接可以同时发起多个请求，并且精确地知道每个请求对应的响应结果。
-
-此外，`请求`和`响应`都可以由多个`帧`组成，类似`http`中的`chunked`传输模式，这就是前面提到的`流式`或`非流式`。
-
-而所有关于是否阻塞、是否流式、是否主动推送的元信息，都包含在头部`1`字节的`flag`之中！
+By default each frame is `blocking` and `nonstreaming`, this allows traditional block-in-header sequencial behaviour like `http/1.1`, but you can make it behave tremendously different by attach flags to your frames!
 
 ------
 
-# 话不多说，干货开始!
+# Enough talk, let's demo!
 
-
-## 阻塞模式
+## blocking mode
 
 ### `server.go`:
 ```golang
@@ -47,26 +25,16 @@ const (
     HelloRespCmd
 )
 func main() {
-    // handler的作用是路由，根据请求帧的命令，分发到不同的处理子函数
     handler := qrpc.NewServeMux()
-    // 注册HelloCmd命令对应的子函数
-    handler.HandleFunc(HelloCmd, func(writer/*用于回写响应*/ qrpc.FrameWriter, request/*当前请求的相关信息*/ *qrpc.RequestFrame) {
-        // 响应帧和请求帧有相同的唯一标识，并且这里把响应帧的命令设置为HelloRespCmd，会更方便调试
+    handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
         writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
-        // 负荷部分为：hello world + 请求帧的原始负荷
         writer.WriteBytes(append([]byte("hello world "), request.Payload...))
-
-        // 前面的StartWrite和WriteBytes其实是构建响应帧的过程
-        // 构建完毕后通过EndWrite触发实际的回写
         writer.EndWrite()
     })
-    // ServerBinding用于配制想监听的端口以及对应的处理函数，如果想监听多个端口，提供多个即可
     bindings := []qrpc.ServerBinding{
         qrpc.ServerBinding{Addr: "0.0.0.0:8080", Handler: handler}}
-    // 构建server
     server := qrpc.NewServer(bindings)
-    // 开始监听
     server.ListenAndServe()
 }
 
@@ -85,44 +53,32 @@ const (
     HelloCmd qrpc.Cmd = iota
 )
 func main() {
-    // 采用默认配置
     conf := qrpc.ConnectionConfig{}
 
-    // 建立一个qrpc的长链接
     conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
 
-    // 发起一个命令为HelloCmd的请求帧，flag空，负荷为xu
     _, resp, _ := conn.Request(HelloCmd, 0/*no flags*/, []byte("xu"))
-    // 获取响应
     frame, _ := resp.GetFrame()
-    // 打印响应负荷
     fmt.Println("resp is", string(frame.Payload))
 }
 ```
 
-上面的例子中，由于`flag`为空，所以服务端会采用默认的串行处理模式。
+In the above example, server will process each client frames **in sequence order**.
 
-------
+## Nonblocking mode
 
-## 非阻塞模式
-
-要使用该模式，只需要修改`client.go`的一行代码:
+To use this mode we only need to change 1 line in `client.go`:
 ```diff
 -    _, resp, _ := conn.Request(HelloCmd, 0/*no flags*/, []byte("xu"))
 +    _, resp, _ := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
 ```
+In this mode `request` frames will be processed concurrently!
 
-这样服务端便会并行处理这个长链接发来的请求！
+## stream mode
 
-------
+`stream` is like `chunked transfer` in `http`, besides, it's **bidirectional**, we can make either `request` or `response` in `stream`, or we can make both!
 
-## 流式
-
-类似`http`中的`chunked`传输模式，不论请求还是响应，都可以拆成多个帧。
-
-下面按`流式请求`和`流式响应`分别介绍。
-
-### 流式请求:
+### Make `request` in `stream` mode:
 
 ### `streamclient.go`:
 
@@ -137,22 +93,15 @@ const (
     HelloCmd qrpc.Cmd = iota
 )
 func main() {
-     // 采用默认配置
     conf := qrpc.ConnectionConfig{}
 
-    // 建立一个qrpc的长链接
     conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
 
-    // 采用流式发送HelloCmd请求，第一个请求帧的负荷是first frame
     writer, resp, _ := conn.StreamRequest(HelloCmd, 0, []byte("first frame"))
-    // 构建第二个请求帧，负荷是last frame
     writer.StartWrite(HelloCmd)
     writer.WriteBytes([]byte("last frame"))
-    // 发送请求，并标记流式结束
     writer.EndWrite(true) // will attach StreamEndFlag
-    // 获取响应
     frame, _ := resp.GetFrame()
-    // 打印响应负荷
     fmt.Println("resp is", string(frame.Payload))
 }
 
@@ -173,22 +122,17 @@ const (
 func main() {
     handler := qrpc.NewServeMux()
     handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
-        // 首帧的处理类似非流式，只是EndWrite最后才会调用
         writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
         writer.WriteBytes(append([]byte("first frame "), request.Payload...))
 
-        // 循环取出流式请求中的剩余帧
         for {
             continueFrames := <-request.FrameCh()
-            // continueFrames为nil表示该请求的所有帧获取完毕
             if continueFrames == nil {
                 break
             }
-            // 将后续帧的负荷追加到响应中去
             writer.WriteBytes(append([]byte(" continue frame "), continueFrames.Payload...))
         }
-        // 响应帧构建完毕，回写给客户端
         writer.EndWrite()
     })
     bindings := []qrpc.ServerBinding{
@@ -200,9 +144,8 @@ func main() {
     }
 }
 ```
-------
 
-流式响应:
+In a similar fasion we can also make `response` in `stream` mode:
 
 ```golang
 package main
@@ -218,31 +161,25 @@ const (
 func main() {
     handler := qrpc.NewServeMux()
     handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
-        // 构建流式响应的第一帧
         writer.StartWrite(request.RequestID, HelloRespCmd, qrpc.StreamFlag)
         writer.WriteBytes(append([]byte("first frame "), request.Payload...))
-        // 第一帧构建完毕，发送
         writer.EndWrite()
 
         for {
-            // 获取流式请求的后续帧
             continueFrames := <-request.FrameCh()
             if continueFrames == nil {
                 break
             }
 
             fmt.Printf("%s\n", continueFrames.Payload)
-            // 构建流式响应的后续帧
             if continueFrames.Flags.IsDone() {
-                // 最后一帧，flag标记为qrpc.StreamEndFlag
+                // it's the last frame，so flag it with qrpc.StreamEndFlag
                 writer.StartWrite(request.RequestID, HelloRespCmd, qrpc.StreamEndFlag)
             } else {
-                // 不是最后一帧，标记为qrpc.StreamFlag
+                // no the last frame，just flag it with qrpc.StreamFlag
                 writer.StartWrite(request.RequestID, HelloRespCmd, qrpc.StreamFlag)
             }
-            
             writer.WriteBytes(append([]byte(" continue frame "), continueFrames.Payload...))
-            // 后续帧构建完毕，发送
             writer.EndWrite()
         }
     })
@@ -256,12 +193,9 @@ func main() {
 }
 ```
 
-关键是`qrpc.StreamFlag`!
+The key is `StreamFlag`!
 
-------
-
-## 推送模式
-
+## push mode
 ```golang
 package main
 import (
@@ -281,10 +215,8 @@ func main() {
         )
         qserver := request.ConnectionInfo().SC.Server()
         pushID := qserver.GetPushID()
-        // 遍历所有长链接
         qserver.WalkConn(0, func(writer qrpc.FrameWriter, ci *qrpc.ConnectionInfo) bool {
             qrpc.GoFunc(&wg, func() {
-                // PushFlag表示主动推送
                 writer.StartWrite(pushID, HelloCmd, qrpc.PushFlag)
                 writer.WriteBytes([]byte("pushed msg"))
                 writer.EndWrite()
@@ -307,9 +239,9 @@ func main() {
 }
 ```
 
-上述代码中，`HelloCmd`的处理子函数将给每个长链接推送一条消息！
+In the above example, server will `push` a message to all connections !
 
-客户端处理推送消息的方式如下：
+To handle `pushed` message, the relevant change at `client` side is:
 
 ```diff
 -    conn, _ := qrpc.NewConnection("0.0.0.0:8080", conf, nil)
@@ -319,11 +251,10 @@ func main() {
 ```
 
 
-
-------
+There are even more features like `StreamRstFlag`!
 
 ## Performance
 
 ![avatar](https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/performance.jpg)
 
-性能大概是`http`的 **4** 倍!
+About **4** times faster than http!
