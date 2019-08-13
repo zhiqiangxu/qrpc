@@ -60,7 +60,7 @@ start:
 		}
 		s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 		if !loaded {
-			LogInfo(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
+			LogDebug(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
 		}
 
 		if s.TryBind(f) {

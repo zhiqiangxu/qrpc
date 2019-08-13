@@ -43,7 +43,7 @@ func (cs *ConnStreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	}
 
 	s := newStream(ctx, requestID, func() {
-		LogInfo(unsafe.Pointer(cs), "close stream", requestID, flags)
+		LogDebug(unsafe.Pointer(cs), "close stream", requestID, flags)
 		target.Delete(requestID)
 	})
 	v, loaded := target.LoadOrStore(requestID, s)

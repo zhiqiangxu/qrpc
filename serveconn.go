@@ -400,7 +400,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
 				if !loaded {
-					LogInfo(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
+					LogDebug(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
