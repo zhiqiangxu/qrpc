@@ -125,9 +125,8 @@ func TestPerformance(t *testing.T) {
 	wg.Wait()
 	conn.Close()
 	endTime := time.Now()
-	fmt.Println(n, "request took", endTime.Sub(startTime))
 
-	select {}
+	t.Log(n, "request took", endTime.Sub(startTime))
 
 }
 

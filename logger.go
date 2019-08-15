@@ -40,7 +40,7 @@ func LogError(msg ...interface{}) {
 // LogDebug for debug log
 func LogDebug(msg ...interface{}) {
 	if Logger == nil {
-		fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
+		// fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
 		return
 	}
 	Logger.Debug(msg...)
