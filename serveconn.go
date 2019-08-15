@@ -163,16 +163,13 @@ func (sc *serveconn) serve() {
 			return
 		case res := <-sc.readFrameCh:
 
-			sc.server.waitThrottle(sc.idx, ctx.Done())
-
-			if !res.f.Flags.IsNonBlock() {
+			if res.readMore != nil {
 				func() {
 					defer sc.handleRequestPanic(res.f, time.Now())
 					handler.ServeQRPC(sc.writer, res.f)
 				}()
 				res.readMore()
 			} else {
-				res.readMore()
 				GoFunc(&sc.wg, func() {
 					defer sc.handleRequestPanic(res.f, time.Now())
 					handler.ServeQRPC(sc.GetWriter(), res.f)
@@ -295,13 +292,18 @@ func (sc *serveconn) readFrames() (err error) {
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 
 	ctx := sc.ctx
+	binding := sc.server.bindings[sc.idx]
+	if binding.ReadFrameChSize > 0 {
+		runtime.LockOSThread()
+	}
+
 	defer func() {
 		sc.tryFreeStreams()
 
 		if err == ErrFrameTooLarge {
 			LogError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
 		}
-		binding := sc.server.bindings[sc.idx]
+
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
 			if err != nil {
@@ -313,6 +315,9 @@ func (sc *serveconn) readFrames() (err error) {
 
 			countlvs := []string{"method", "readFrames", "error", errStr}
 			binding.CounterMetric.With(countlvs...).Add(1)
+		}
+		if binding.ReadFrameChSize > 0 {
+			runtime.UnlockOSThread()
 		}
 	}()
 	gate := make(gate, 1)
@@ -345,18 +350,32 @@ func (sc *serveconn) readFrames() (err error) {
 			}
 		}
 
-		select {
-		case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req), readMore: gateDone}:
-		case <-ctx.Done():
-			return ctx.Err()
+		if req.Flags.IsNonBlock() {
+			select {
+			case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req)}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+		} else {
+			select {
+			case sc.readFrameCh <- readFrameResult{f: (*RequestFrame)(req), readMore: gateDone}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 
-		select {
-		case <-gate:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-
+		sc.server.waitThrottle(sc.idx, ctx.Done())
 	}
 
 }

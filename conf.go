@@ -13,6 +13,7 @@ type ServerBinding struct {
 	Handler             Handler // handler to invoke
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
+	ReadFrameChSize     int
 	MaxFrameSize        int
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)
