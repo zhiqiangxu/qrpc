@@ -321,7 +321,7 @@ func main() {
 
 ## 双向调用
 
-前面的demo都是client调用server，其实client也可以注册回调让server调，参考这个[栗子](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go#L342)。
+前面的`demo`都是`client`调用`server`，其实`client`也可以注册回调让`server`调，参考这个[栗子](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go#L342)。
 
 ------
 
