@@ -289,6 +289,8 @@ func TestHTTPPerformance(t *testing.T) {
 const (
 	HelloCmd qrpc.Cmd = iota
 	HelloRespCmd
+	ClientCmd
+	ClientRespCmd
 )
 
 func startServer() {
@@ -326,6 +328,54 @@ func startServerForCancel() {
 				fmt.Println("EndWrite", err)
 			}
 		}
+	})
+	bindings := []qrpc.ServerBinding{
+		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+	server := qrpc.NewServer(bindings)
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Println("ListenAndServe", err)
+		panic(err)
+	}
+}
+
+func TestClientHandler(t *testing.T) {
+	go startServerForClientHandler()
+
+	conf := qrpc.ConnectionConfig{Handler: qrpc.HandlerFunc(func(w qrpc.FrameWriter, frame *qrpc.RequestFrame) {
+		w.StartWrite(frame.RequestID, ClientRespCmd, 0)
+		w.WriteBytes([]byte("client resp"))
+		w.EndWrite()
+	})}
+
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+		fmt.Println(string(frame.Payload))
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu "))
+	if err != nil {
+		panic(err)
+	}
+
+	frame, err := resp.GetFrame()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("resp is ", string(frame.Payload))
+}
+
+func startServerForClientHandler() {
+	handler := qrpc.NewServeMux()
+	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
+		_, resp, _ := request.ConnectionInfo().SC.Request(ClientCmd, 0, nil)
+		frame, _ := resp.GetFrame()
+		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
+		writer.WriteBytes(request.Payload)
+		writer.WriteBytes(frame.Payload)
+		writer.EndWrite()
 	})
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}

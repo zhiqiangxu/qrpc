@@ -5,7 +5,7 @@
 > *  `阻塞` 或 `非阻塞`
 > *  `流式` 或 `非流式`（一般传音视频才会用到，相对复杂一些）
 > *  `主动推送`
-> *  `双向调用`(`server`也可以主动调用`client`通过`ConnectionConfig.Handler`注册的命令)
+> *  `双向调用`(`server`也可以主动调用`client`)
 
 默认是阻塞模式，也就是同一个长链接的请求是串行处理，类似`http/1.1`，但是通过微小的改动就可以切换到其他模式。
 
@@ -319,7 +319,9 @@ func main() {
 +    })
 ```
 
+## 双向调用
 
+前面的demo都是client调用server，其实client也可以注册回调让server调，参考这个[栗子](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go#L342)。
 
 ------
 
