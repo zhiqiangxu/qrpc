@@ -343,7 +343,7 @@ func main() {
 	<tbody>
 		<tr>
 			<td align="center" valign="middle">
-				<img width = "200" src="https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/assets/doc/wechat.png"/>
+				<img width = "200" src="https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/wechat.png"/>
 			</td>
 		</tr>
 	</tbody>
