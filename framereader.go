@@ -99,11 +99,16 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 		return nil, ErrInvalidFrameSize
 	}
 
-	payload := make([]byte, size-12)
-	err = dfr.ReadBytes(payload)
-	if err != nil {
-		return nil, err
+	frame := &Frame{RequestID: requestID, Cmd: cmd, Flags: flags}
+
+	if size > 12 {
+		payload := make([]byte, size-12)
+		err = dfr.ReadBytes(payload)
+		if err != nil {
+			return nil, err
+		}
+		frame.Payload = payload
 	}
 
-	return &Frame{RequestID: requestID, Cmd: cmd, Flags: flags, Payload: payload}, nil
+	return frame, nil
 }
