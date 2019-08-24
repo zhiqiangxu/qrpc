@@ -1,13 +1,12 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"reflect"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -87,7 +86,6 @@ func TestPerformance(t *testing.T) {
 
 	srv := &http.Server{Addr: "0.0.0.0:8888"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		runtime.GC()
 		io.WriteString(w, "hello world xu\n")
 	})
 	go func() {
@@ -113,7 +111,7 @@ func TestPerformance(t *testing.T) {
 
 		qrpc.GoFunc(&wg, func() {
 			frame, _ := resp.GetFrame()
-			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}
 		})
@@ -134,7 +132,6 @@ func TestAPI(t *testing.T) {
 
 	srv := &http.Server{Addr: "0.0.0.0:8888"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		runtime.GC()
 		io.WriteString(w, "hello world xu\n")
 	})
 	go func() {
@@ -155,7 +152,7 @@ func TestAPI(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}
 		})
@@ -168,14 +165,12 @@ func TestAPI(t *testing.T) {
 	wg.Wait()
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
-	select {}
 }
 
 func TestPerformanceShort(t *testing.T) {
 
 	srv := &http.Server{Addr: "0.0.0.0:8888"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		runtime.GC()
 		io.WriteString(w, "hello world xu\n")
 	})
 	go func() {
@@ -208,7 +203,7 @@ func TestPerformanceShort(t *testing.T) {
 			if err != nil {
 				panic(err)
 			}
-			if !reflect.DeepEqual(frame.Payload, []byte("hello world xu")) {
+			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 				panic("fail")
 			}
 		})
@@ -220,8 +215,6 @@ func TestPerformanceShort(t *testing.T) {
 	wg.Wait()
 	endTime := time.Now()
 	fmt.Println(n, "request took", endTime.Sub(startTime))
-
-	select {}
 
 }
 
@@ -245,7 +238,7 @@ func TestHTTPPerformance(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		if !reflect.DeepEqual(body, []byte("hello world xu")) {
+		if !bytes.Equal(body, []byte("hello world xu")) {
 			panic("fail")
 		}
 		resp.Body.Close()
