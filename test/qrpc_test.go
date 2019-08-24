@@ -96,7 +96,7 @@ func TestPerformance(t *testing.T) {
 	}()
 
 	go startServer()
-        time.Sleep(time.Second * 2)
+	time.Sleep(time.Second * 2)
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
 	if err != nil {
 		panic(err)
