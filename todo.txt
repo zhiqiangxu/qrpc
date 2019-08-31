@@ -1,3 +1,4 @@
 1.clientconn断开时写队列的处理方式可配置
 2.去掉serveconn的写协程
-3.graceful restart
+3.poller
+4.graceful restart
