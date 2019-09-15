@@ -46,33 +46,30 @@ start:
 
 	// ReadFrame is not threadsafe, so below need not be atomic
 
-	for {
+	// handle Rst
+	if flags.IsRst() {
 
-		// handle Rst
-		if flags.IsRst() {
-
-			s := cs.GetStream(requestID, flags)
-			if s != nil {
-				s.ResetByPeer()
-			}
-
-			goto start
-		}
-		s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
-		if !loaded {
-			LogDebug(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
-		}
-
-		if s.TryBind(f) {
-			return f, nil
-		}
-		ok := s.AddInFrame(f)
-		if !ok {
-			<-s.Done()
+		s := cs.GetStream(requestID, flags)
+		if s != nil {
+			s.ResetByPeer()
 		}
 
 		goto start
 	}
+	s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
+	if !loaded {
+		LogDebug(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
+	}
+
+	if s.TryBind(f) {
+		return f, nil
+	}
+	ok := s.AddInFrame(f)
+	if !ok {
+		<-s.Done()
+	}
+
+	goto start
 
 }
 
