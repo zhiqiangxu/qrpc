@@ -335,7 +335,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	conn.respes[requestID] = resp
 	conn.mu.Unlock()
 
-	writer := newFrameWriter(conn.loopCtx, conn.writeFrameCh)
+	writer := newFrameWriter(conn)
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
@@ -352,6 +352,22 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	}
 
 	return requestID, resp, writer, nil
+}
+
+func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
+	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	select {
+	case conn.writeFrameCh <- wfr:
+	case <-conn.loopCtx.Done():
+		return conn.loopCtx.Err()
+	}
+
+	select {
+	case err := <-wfr.result:
+		return err
+	case <-conn.loopCtx.Done():
+		return conn.loopCtx.Err()
+	}
 }
 
 // ResetFrame resets a stream by requestID
@@ -508,7 +524,7 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 }
 
 func (conn *Connection) getWriter() FrameWriter {
-	return newFrameWriter(conn.loopCtx, conn.writeFrameCh)
+	return newFrameWriter(conn)
 }
 
 func (conn *Connection) writeFrames() (err error) {

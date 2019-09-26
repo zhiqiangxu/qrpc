@@ -146,7 +146,7 @@ func (sc *serveconn) serve() {
 	}
 	ctx := sc.ctx
 	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, maxFrameSize)
-	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
+	sc.writer = newFrameWriter(sc) // only used by blocking mode
 
 	GoFunc(&sc.wg, func() {
 		sc.readFrames()
@@ -255,7 +255,7 @@ func (sc *serveconn) GetID() string {
 // GetWriter generate a FrameWriter for the connection
 func (sc *serveconn) GetWriter() FrameWriter {
 
-	return newFrameWriter(sc.ctx, sc.writeFrameCh)
+	return newFrameWriter(sc)
 }
 
 var (
@@ -499,7 +499,7 @@ func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (
 	ci.respes[requestID] = resp
 	ci.l.Unlock()
 
-	writer := newFrameWriter(sc.ctx, sc.writeFrameCh)
+	writer := newFrameWriter(sc)
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
@@ -516,6 +516,22 @@ func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (
 	}
 
 	return requestID, resp, writer, nil
+}
+
+func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) error {
+	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	select {
+	case sc.writeFrameCh <- wfr:
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
+	}
+
+	select {
+	case err := <-wfr.result:
+		return err
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
+	}
 }
 
 // Close the connection.

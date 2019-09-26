@@ -1,23 +1,24 @@
 package qrpc
 
-import (
-	"context"
-)
+// frameBytesWriter for writing frame bytes
+type frameBytesWriter interface {
+	// writeFrameBytes write the frame bytes atomically or error
+	writeFrameBytes(dfw *defaultFrameWriter) error
+}
 
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	writeCh   chan<- writeFrameRequest
+	fbw       frameBytesWriter
 	wbuf      []byte
 	requestID uint64
 	cmd       Cmd
 	flags     FrameFlag
-	ctx       context.Context
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames
-func newFrameWriter(ctx context.Context, writeCh chan<- writeFrameRequest) *defaultFrameWriter {
-	return &defaultFrameWriter{writeCh: writeCh, ctx: ctx}
+func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
+	return &defaultFrameWriter{fbw: fbw}
 }
 
 // StartWrite Write the FrameHeader.
@@ -73,19 +74,7 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 		byte(length))
 	_ = append(dfw.wbuf[:12], byte(dfw.flags)) // flags may be changed by StreamWriter
 
-	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
-	select {
-	case dfw.writeCh <- wfr:
-	case <-dfw.ctx.Done():
-		return dfw.ctx.Err()
-	}
-
-	select {
-	case err := <-wfr.result:
-		return err
-	case <-dfw.ctx.Done():
-		return dfw.ctx.Err()
-	}
+	return dfw.fbw.writeFrameBytes(dfw)
 }
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
