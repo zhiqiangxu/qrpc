@@ -14,6 +14,7 @@ type ServerBinding struct {
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
 	ReadFrameChSize     int
+	WriteFrameChSize    int
 	MaxFrameSize        int
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)

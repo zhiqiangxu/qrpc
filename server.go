@@ -132,6 +132,10 @@ func NewServer(bindings []ServerBinding) *Server {
 		if binding.MaxCloseRate != 0 {
 			closeRateLimiter[idx] = ratelimit.New(binding.MaxCloseRate)
 		}
+		if binding.WriteFrameChSize < 1 {
+			// at least 1 for WriteFrameChSize
+			bindings[idx].WriteFrameChSize = 1
+		}
 	}
 	return &Server{
 		bindings:         bindings,
@@ -332,13 +336,15 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) (sc *serv
 		untrackedCh:  make(chan struct{}),
 		cs:           &ConnStreams{},
 		readFrameCh:  make(chan readFrameResult, srv.bindings[idx].ReadFrameChSize),
-		writeFrameCh: make(chan writeFrameRequest)}
+		writeFrameCh: make(chan writeFrameRequest, srv.bindings[idx].WriteFrameChSize),
+		wlockCh:      make(chan struct{}, 1)}
 
 	ctx, cancelCtx := context.WithCancel(ctx)
 	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
 
 	sc.cancelCtx = cancelCtx
 	sc.ctx = ctx
+	sc.bytesWriter = NewWriterWithTimeout(ctx, rwc, srv.bindings[idx].DefaultWriteTimeout)
 
 	srv.activeConn[idx].Store(sc, struct{}{})
 

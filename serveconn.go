@@ -40,11 +40,13 @@ type serveconn struct {
 	// to CloseNotifier callers. It is usually of type *net.TCPConn
 	rwc net.Conn
 
-	reader       *defaultFrameReader    // used in conn.readFrames
-	writer       FrameWriter            // used by handlers
+	reader       *defaultFrameReader // used in conn.readFrames
+	writer       FrameWriter         // used by handlers
+	bytesWriter  *Writer
 	readFrameCh  chan readFrameResult   // written by conn.readFrames
 	writeFrameCh chan writeFrameRequest // written by FrameWriter
-	rwDone       uint32
+	inflight     int32
+	wlockCh      chan struct{}
 
 	// modified by Server
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
@@ -148,11 +150,9 @@ func (sc *serveconn) serve() {
 	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, maxFrameSize)
 	sc.writer = newFrameWriter(sc) // only used by blocking mode
 
+	sc.inflight = 1
 	GoFunc(&sc.wg, func() {
 		sc.readFrames()
-	})
-	GoFunc(&sc.wg, func() {
-		sc.writeFrames(binding.DefaultWriteTimeout)
 	})
 
 	handler := binding.Handler
@@ -380,74 +380,136 @@ func (sc *serveconn) readFrames() (err error) {
 
 }
 
-func (sc *serveconn) writeFrames(timeout int) (err error) {
+func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
+	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	select {
+	case sc.writeFrameCh <- wfr:
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
+	}
 
-	defer func() {
-		sc.tryFreeStreams()
+	select {
+	case sc.wlockCh <- struct{}{}:
+		// only one allowed at a time
+
+		var buffs net.Buffers
 
 		binding := sc.server.bindings[sc.idx]
-		if binding.CounterMetric != nil {
-			errStr := fmt.Sprintf("%v", err)
-			if err != nil && binding.OverlayNetwork != nil {
-				errStr = errStrWriteFramesForOverlayNetwork
+
+		// check for reader quit
+		if sc.addInflight(1) == 1 {
+
+			sc.addInflight(-1)
+
+			select {
+			case <-sc.ctx.Done():
+				return sc.ctx.Err()
+			default:
+				// read has quit, ctx must have been canceled
+				panic("bug in qrpc inflight")
 			}
-			countlvs := []string{"method", "writeFrames", "error", errStr}
-			binding.CounterMetric.With(countlvs...).Add(1)
 		}
-	}()
 
-	ctx := sc.ctx
-	writer := NewWriterWithTimeout(ctx, sc.rwc, timeout)
-	for {
-		select {
-		case res := <-sc.writeFrameCh:
-			dfw := res.dfw
-			flags := dfw.Flags()
-			requestID := dfw.RequestID()
+		defer func() {
+			sc.tryFreeStreams()
 
-			if flags.IsRst() {
-				s := sc.cs.GetStream(requestID, flags)
-				if s == nil {
-					res.result <- ErrRstNonExistingStream
-					break
-				}
-				// for rst frame, AddOutFrame returns false when no need to send the frame
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- nil
-					break
-				}
-			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
-				if !loaded {
-					LogDebug(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
-				}
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- ErrWriteAfterCloseSelf
-					break
+			if err != nil {
+				if binding.CounterMetric != nil {
+					errStr := fmt.Sprintf("%v", err)
+					if binding.OverlayNetwork != nil {
+						errStr = errStrWriteFramesForOverlayNetwork
+					}
+					countlvs := []string{"method", "writeFrames", "error", errStr}
+					binding.CounterMetric.With(countlvs...).Add(1)
 				}
 			}
-
-			_, err = writer.Write(dfw.GetWbuf())
+		}()
+		requests := []writeFrameRequest{}
+		writeBuffers := func() error {
+			_, err := buffs.WriteTo(sc.bytesWriter)
 			if err != nil {
-				LogDebug(unsafe.Pointer(sc), "serveconn Write", err)
+				LogDebug(unsafe.Pointer(sc), "buffs.WriteTo", err)
 				sc.Close()
-				res.result <- err
 
 				if opErr, ok := err.(*net.OpError); ok {
-					return opErr.Err
+					err = opErr.Err
 				}
-				return
+				for idx, request := range requests {
+					if len(buffs[idx]) != 0 {
+						request.result <- err
+					} else {
+						request.result <- nil
+					}
+				}
+				if len(wfr.result) > 0 {
+					return <-wfr.result
+				}
+				return err
 			}
-			res.result <- nil
-		case <-ctx.Done():
-			return ctx.Err()
+			for _, request := range requests {
+				request.result <- nil
+			}
+			// release wlock
+			<-sc.wlockCh
+			return nil
 		}
+		for i := 0; i < binding.WriteFrameChSize; i++ {
+			select {
+			case res := <-sc.writeFrameCh:
+				dfw := res.dfw
+				flags := dfw.Flags()
+				requestID := dfw.RequestID()
+
+				if flags.IsRst() {
+					s := sc.cs.GetStream(requestID, flags)
+					if s == nil {
+						res.result <- ErrRstNonExistingStream
+						break
+					}
+					// for rst frame, AddOutFrame returns false when no need to send the frame
+					if !s.AddOutFrame(requestID, flags) {
+						res.result <- nil
+						break
+					}
+				} else if !flags.IsPush() { // skip stream logic if PushFlag set
+					s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+					if !loaded {
+						LogDebug(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
+					}
+					if !s.AddOutFrame(requestID, flags) {
+						res.result <- ErrWriteAfterCloseSelf
+						break
+					}
+				}
+
+				requests = append(requests, res)
+				buffs = append(buffs, dfw.GetWbuf())
+
+			case <-sc.ctx.Done():
+				for _, request := range requests {
+					request.result <- sc.ctx.Err()
+				}
+				return sc.ctx.Err()
+			default:
+				return writeBuffers()
+			}
+		}
+		return writeBuffers()
+	case err := <-wfr.result:
+		return err
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
 	}
+
+}
+
+func (sc *serveconn) addInflight(n int32) int32 {
+	return atomic.AddInt32(&sc.inflight, n)
 }
 
 func (sc *serveconn) tryFreeStreams() {
-	count := atomic.AddUint32(&sc.rwDone, 1)
-	if count == 2 {
+
+	if sc.addInflight(-1) == 0 {
 		sc.cs.Release()
 	}
 }
@@ -516,22 +578,6 @@ func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (
 	}
 
 	return requestID, resp, writer, nil
-}
-
-func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) error {
-	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
-	select {
-	case sc.writeFrameCh <- wfr:
-	case <-sc.ctx.Done():
-		return sc.ctx.Err()
-	}
-
-	select {
-	case err := <-wfr.result:
-		return err
-	case <-sc.ctx.Done():
-		return sc.ctx.Err()
-	}
 }
 
 // Close the connection.

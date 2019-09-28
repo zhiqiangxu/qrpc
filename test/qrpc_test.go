@@ -300,7 +300,7 @@ func startServer() {
 		}
 	})
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000}}
+		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000, WriteFrameChSize: 20000}}
 	server := qrpc.NewServer(bindings)
 	err := server.ListenAndServe()
 	if err != nil {
