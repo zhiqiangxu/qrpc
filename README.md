@@ -352,4 +352,4 @@ func main() {
 
 ## Stargazers
 
-[![Stargazers over time](https://starchart.cc/zhiqiangxu/qrpc)](https://starchart.cc/zhiqiangxu/qrpc)
+[![Stargazers over time](https://starchart.cc/zhiqiangxu/qrpc.svg)](https://starchart.cc/zhiqiangxu/qrpc)
