@@ -258,3 +258,7 @@ There are even more features like `StreamRstFlag`!
 ![avatar](https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/performance.jpg)
 
 About **4** times faster than http!
+
+## Stargazers
+
+[![Stargazers over time](https://starchart.cc/zhiqiangxu/qrpc.svg)](https://starchart.cc/zhiqiangxu/qrpc)
