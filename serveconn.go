@@ -426,7 +426,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		}()
 		requests := []writeFrameRequest{}
 		writeBuffers := func() error {
-			_, err := buffs.WriteTo(sc.bytesWriter)
+			_, err := sc.bytesWriter.writeBuffers(&buffs)
 			if err != nil {
 				LogDebug(unsafe.Pointer(sc), "buffs.WriteTo", err)
 				sc.Close()
