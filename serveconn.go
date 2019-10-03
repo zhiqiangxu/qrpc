@@ -41,13 +41,15 @@ type serveconn struct {
 	// to CloseNotifier callers. It is usually of type *net.TCPConn
 	rwc net.Conn
 
-	reader       *defaultFrameReader // used in conn.readFrames
-	writer       FrameWriter         // used by handlers
-	bytesWriter  *Writer
-	readFrameCh  chan readFrameResult   // written by conn.readFrames
-	writeFrameCh chan writeFrameRequest // written by FrameWriter
-	inflight     int32
-	wlockCh      chan struct{}
+	reader         *defaultFrameReader // used in conn.readFrames
+	writer         FrameWriter         // used by handlers
+	bytesWriter    *Writer
+	readFrameCh    chan readFrameResult   // written by conn.readFrames
+	writeFrameCh   chan writeFrameRequest // written by FrameWriter
+	inflight       int32
+	wlockCh        chan struct{}
+	cachedRequests []writeFrameRequest
+	cachedBuffs    net.Buffers
 
 	// modified by Server
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
@@ -399,7 +401,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			return <-wfr.result
 		}
 
-		var buffs net.Buffers
+		buffs := sc.cachedBuffs[:0]
 
 		binding := sc.server.bindings[sc.idx]
 
@@ -431,7 +433,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 				}
 			}
 		}()
-		requests := []writeFrameRequest{}
+		requests := sc.cachedRequests[:0]
 		writeBuffers := func() error {
 			_, err := sc.bytesWriter.writeBuffers(&buffs)
 			if err != nil {
