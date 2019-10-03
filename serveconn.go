@@ -420,7 +420,10 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		}
 
 		defer func() {
+
 			sc.tryFreeStreams()
+			// release wlock
+			<-sc.wlockCh
 
 			if err != nil {
 				if binding.CounterMetric != nil {
@@ -441,8 +444,6 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			return
 		}
 		if len(sc.cachedRequests) == 0 {
-			// release wlock
-			<-sc.wlockCh
 			return <-wfr.result
 		}
 		err = sc.writeBuffers()
@@ -450,8 +451,6 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
 		}
 
-		// release wlock
-		<-sc.wlockCh
 		return <-wfr.result
 
 	case err := <-wfr.result:
