@@ -111,9 +111,9 @@ func TestPerformance(t *testing.T) {
 		}
 
 		qrpc.GoFunc(&wg, func() {
-			frame, _ := resp.GetFrame()
-			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
-				panic("fail")
+			frame, err := resp.GetFrame()
+			if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+				panic(fmt.Sprintf("fail:%s:%v", string(frame.Payload), err))
 			}
 		})
 		i++
