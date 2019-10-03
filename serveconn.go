@@ -401,7 +401,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			return <-wfr.result
 		}
 
-		buffs := sc.cachedBuffs[:0]
+		sc.cachedBuffs = sc.cachedBuffs[:0]
 
 		binding := sc.server.bindings[sc.idx]
 
@@ -433,43 +433,19 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 				}
 			}
 		}()
-		requests := sc.cachedRequests[:0]
-		writeBuffers := func() error {
-			_, err := sc.bytesWriter.writeBuffers(&buffs)
-			if err != nil {
-				LogDebug(unsafe.Pointer(sc), "buffs.WriteTo", err)
-				sc.Close()
+		sc.cachedRequests = sc.cachedRequests[:0]
 
-				if opErr, ok := err.(*net.OpError); ok {
-					err = opErr.Err
-				}
-				for idx, request := range requests {
-					if len(buffs[idx]) != 0 {
-						request.result <- err
-					} else {
-						request.result <- nil
-					}
-				}
-				return err
-			}
-			for _, request := range requests {
-				request.result <- nil
-			}
-
-			return nil
-		}
-
-		requests, buffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, requests, buffs)
+		sc.cachedRequests, sc.cachedBuffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, sc.cachedRequests, sc.cachedBuffs)
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
 			return
 		}
-		if len(requests) == 0 {
+		if len(sc.cachedRequests) == 0 {
 			// release wlock
 			<-sc.wlockCh
 			return <-wfr.result
 		}
-		err = writeBuffers()
+		err = sc.writeBuffers()
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
 		}
@@ -484,6 +460,31 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		return sc.ctx.Err()
 	}
 
+}
+
+func (sc *serveconn) writeBuffers() error {
+	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+	if err != nil {
+		LogDebug(unsafe.Pointer(sc), "buffs.WriteTo", err)
+		sc.Close()
+
+		if opErr, ok := err.(*net.OpError); ok {
+			err = opErr.Err
+		}
+		for idx, request := range sc.cachedRequests {
+			if len(sc.cachedBuffs[idx]) != 0 {
+				request.result <- err
+			} else {
+				request.result <- nil
+			}
+		}
+		return err
+	}
+	for _, request := range sc.cachedRequests {
+		request.result <- nil
+	}
+
+	return nil
 }
 
 func (sc *serveconn) getStream(requestID uint64, flags FrameFlag) *Stream {
