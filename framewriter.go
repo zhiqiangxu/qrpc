@@ -79,6 +79,10 @@ func (dfw *defaultFrameWriter) RequestID() uint64 {
 	return requestID
 }
 
+func (dfw *defaultFrameWriter) SetRequestID(requestID uint64) {
+	binary.BigEndian.PutUint64(dfw.wbuf[4:], requestID)
+}
+
 func (dfw *defaultFrameWriter) Flags() FrameFlag {
 	return FrameFlag(dfw.wbuf[12])
 }
