@@ -24,7 +24,6 @@ var (
 // FrameWriter looks like writes a qrpc resp
 // but it internally needs be scheduled, thus maintains a simple yet powerful interface
 type FrameWriter interface {
-	StartRequest(cmd Cmd, flags FrameFlag)
 	StartWrite(requestID uint64, cmd Cmd, flags FrameFlag)
 	WriteBytes(v []byte) // v is copied in WriteBytes
 	EndWrite() error     // block until scheduled

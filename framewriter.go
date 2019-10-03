@@ -1,46 +1,28 @@
 package qrpc
 
-import "encoding/binary"
+import (
+	"context"
+	"encoding/binary"
+)
 
 // frameBytesWriter for writing frame bytes
 type frameBytesWriter interface {
 	// writeFrameBytes write the frame bytes atomically or error
 	writeFrameBytes(dfw *defaultFrameWriter) error
+	getStream(requestID uint64, flags FrameFlag) *Stream
+	createOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool)
 }
 
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	fbw           frameBytesWriter
-	wbuf          []byte
-	needRequestID bool
+	fbw  frameBytesWriter
+	wbuf []byte
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames
 func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
 	return &defaultFrameWriter{fbw: fbw}
-}
-
-// StartRequest for start a request.
-func (dfw *defaultFrameWriter) StartRequest(cmd Cmd, flags FrameFlag) {
-	dfw.needRequestID = true
-	dfw.wbuf = append(dfw.wbuf[:0],
-		0, // 4 bytes of length, filled in in endWrite
-		0,
-		0,
-		0,
-		0, // requestID start
-		0,
-		0,
-		0,
-		0,
-		0,
-		0,
-		0, // requestID end
-		byte(flags),
-		byte(cmd>>16),
-		byte(cmd>>8),
-		byte(cmd))
 }
 
 // StartWrite Write the FrameHeader.
@@ -91,8 +73,20 @@ func (dfw *defaultFrameWriter) SetFlags(flags FrameFlag) {
 	_ = append(dfw.wbuf[:12], byte(flags))
 }
 
+func (dfw *defaultFrameWriter) GetStream(requestID uint64, flags FrameFlag) *Stream {
+	return dfw.fbw.getStream(requestID, flags)
+}
+
+func (dfw *defaultFrameWriter) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
+	return dfw.fbw.createOrGetStream(ctx, requestID, flags)
+}
+
 func (dfw *defaultFrameWriter) GetWbuf() []byte {
 	return dfw.wbuf
+}
+
+func (dfw *defaultFrameWriter) Payload() []byte {
+	return dfw.wbuf[16:]
 }
 
 // EndWrite finishes write frame
@@ -106,8 +100,13 @@ func (dfw *defaultFrameWriter) EndWrite() (err error) {
 		byte(length))
 
 	err = dfw.fbw.writeFrameBytes(dfw)
-	dfw.wbuf = dfw.wbuf[0:16]
+	dfw.wbuf = dfw.wbuf[:16]
+
 	return
+}
+
+func (dfw *defaultFrameWriter) Length() int {
+	return int(binary.BigEndian.Uint32(dfw.wbuf))
 }
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {

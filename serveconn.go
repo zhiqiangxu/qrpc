@@ -1,6 +1,7 @@
 package qrpc
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -392,6 +393,12 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 	case sc.wlockCh <- struct{}{}:
 		// only one allowed at a time
 
+		if len(wfr.result) > 0 {
+			// already handled, release lock
+			<-sc.wlockCh
+			return <-wfr.result
+		}
+
 		var buffs net.Buffers
 
 		binding := sc.server.bindings[sc.idx]
@@ -441,66 +448,119 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 						request.result <- nil
 					}
 				}
-				if len(wfr.result) > 0 {
-					return <-wfr.result
-				}
 				return err
 			}
 			for _, request := range requests {
 				request.result <- nil
 			}
-			// release wlock
-			<-sc.wlockCh
+
 			return nil
 		}
-		for i := 0; i < binding.WriteFrameChSize; i++ {
-			select {
-			case res := <-sc.writeFrameCh:
-				dfw := res.dfw
-				flags := dfw.Flags()
-				requestID := dfw.RequestID()
 
-				if flags.IsRst() {
-					s := sc.cs.GetStream(requestID, flags)
-					if s == nil {
-						res.result <- ErrRstNonExistingStream
-						break
-					}
-					// for rst frame, AddOutFrame returns false when no need to send the frame
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- nil
-						break
-					}
-				} else if !flags.IsPush() { // skip stream logic if PushFlag set
-					s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
-					if !loaded {
-						LogDebug(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
-					}
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- ErrWriteAfterCloseSelf
-						break
-					}
-				}
-
-				requests = append(requests, res)
-				buffs = append(buffs, dfw.GetWbuf())
-
-			case <-sc.ctx.Done():
-				for _, request := range requests {
-					request.result <- sc.ctx.Err()
-				}
-				return sc.ctx.Err()
-			default:
-				return writeBuffers()
-			}
+		requests, buffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, requests, buffs)
+		if err != nil {
+			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
+			return
 		}
-		return writeBuffers()
+		if len(requests) == 0 {
+			// release wlock
+			<-sc.wlockCh
+			return <-wfr.result
+		}
+		err = writeBuffers()
+		if err != nil {
+			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
+		}
+
+		// release wlock
+		<-sc.wlockCh
+		return <-wfr.result
+
 	case err := <-wfr.result:
 		return err
 	case <-sc.ctx.Done():
 		return sc.ctx.Err()
 	}
 
+}
+
+func (sc *serveconn) getStream(requestID uint64, flags FrameFlag) *Stream {
+	return sc.cs.GetStream(requestID, flags)
+}
+
+func (sc *serveconn) createOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
+	return sc.cs.CreateOrGetStream(ctx, requestID, flags)
+}
+
+func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh chan writeFrameRequest, batch int, timeout time.Duration, oldRequests []writeFrameRequest, oldBuffs net.Buffers) ([]writeFrameRequest, net.Buffers, error) {
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	var (
+		res       writeFrameRequest
+		dfw       *defaultFrameWriter
+		flags     FrameFlag
+		requestID uint64
+	)
+
+	var canQuit bool
+	for i := 0; i < batch; i++ {
+		select {
+		case res = <-writeFrameCh:
+			if res.result == result {
+				canQuit = true
+			}
+			dfw = res.dfw
+			flags = dfw.Flags()
+			requestID = dfw.RequestID()
+
+			if flags.IsRst() {
+				s := dfw.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrRstNonExistingStream
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
+				s, loaded := dfw.CreateOrGetStream(ctx, requestID, flags)
+				if !loaded {
+					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+				}
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			oldRequests = append(oldRequests, res)
+			oldBuffs = append(oldBuffs, dfw.GetWbuf())
+			if !bytes.Equal(dfw.Payload(), []byte("hello world xu")) {
+				LogError("payload", string(dfw.Payload()), "len", len(dfw.Payload()), "hlen", dfw.Length(), "cmd", dfw.Cmd(), "flags", dfw.Flags())
+				panic(fmt.Sprintf("payload:%s", string(dfw.Payload())))
+			}
+
+		case <-ctx.Done():
+			for _, request := range oldRequests {
+				request.result <- ctx.Err()
+			}
+			return oldRequests, oldBuffs, ctx.Err()
+		case <-timer.C:
+			if !canQuit {
+				timer.Stop()
+				timer = time.NewTimer(timeout)
+				batch++
+				continue
+			}
+			return oldRequests, oldBuffs, nil
+		}
+	}
+
+	return oldRequests, oldBuffs, nil
 }
 
 func (sc *serveconn) addInflight(n int32) int32 {

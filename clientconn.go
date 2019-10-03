@@ -327,6 +327,14 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 	}
 }
 
+func (conn *Connection) getStream(requestID uint64, flags FrameFlag) *Stream {
+	return conn.cs.GetStream(requestID, flags)
+}
+
+func (conn *Connection) createOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
+	return conn.cs.CreateOrGetStream(ctx, requestID, flags)
+}
+
 // ResetFrame resets a stream by requestID
 func (conn *Connection) ResetFrame(requestID uint64, reason Cmd) error {
 	return conn.getWriter().ResetFrame(requestID, reason)
