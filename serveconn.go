@@ -435,7 +435,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		}()
 		sc.cachedRequests = sc.cachedRequests[:0]
 
-		sc.cachedRequests, sc.cachedBuffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, sc.cachedRequests, sc.cachedBuffs)
+		sc.cachedRequests, sc.cachedBuffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, sc.cachedRequests, sc.cachedBuffs)
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
 			return
@@ -495,10 +495,7 @@ func (sc *serveconn) createOrGetStream(ctx context.Context, requestID uint64, fl
 	return sc.cs.CreateOrGetStream(ctx, requestID, flags)
 }
 
-func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh chan writeFrameRequest, batch int, timeout time.Duration, oldRequests []writeFrameRequest, oldBuffs net.Buffers) ([]writeFrameRequest, net.Buffers, error) {
-
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh chan writeFrameRequest, batch int, oldRequests []writeFrameRequest, oldBuffs net.Buffers) ([]writeFrameRequest, net.Buffers, error) {
 
 	var (
 		res       writeFrameRequest
@@ -552,12 +549,9 @@ func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh cha
 				request.result <- ctx.Err()
 			}
 			return oldRequests, oldBuffs, ctx.Err()
-		case <-timer.C:
+		default:
 			if !canQuit {
-				timer.Stop()
-				timer = time.NewTimer(timeout)
-				batch++
-				continue
+				panic("canQuit = false")
 			}
 			return oldRequests, oldBuffs, nil
 		}
