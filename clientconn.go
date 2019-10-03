@@ -222,14 +222,6 @@ func (conn *Connection) Wait() {
 	conn.wg.Wait()
 }
 
-// StreamWriter is returned by StreamRequest
-type StreamWriter interface {
-	RequestID() uint64
-	StartWrite(cmd Cmd)
-	WriteBytes(v []byte)     // v is copied in WriteBytes
-	EndWrite(end bool) error // block until scheduled
-}
-
 type defaultStreamWriter struct {
 	w         *defaultFrameWriter
 	requestID uint64

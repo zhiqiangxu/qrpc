@@ -31,6 +31,14 @@ type FrameWriter interface {
 	ResetFrame(requestID uint64, reason Cmd) error
 }
 
+// StreamWriter is returned by StreamRequest
+type StreamWriter interface {
+	RequestID() uint64
+	StartWrite(cmd Cmd)
+	WriteBytes(v []byte)     // v is copied in WriteBytes
+	EndWrite(end bool) error // block until scheduled
+}
+
 // A Handler responds to an qrpc request.
 type Handler interface {
 	ServeQRPC(FrameWriter, *RequestFrame)
