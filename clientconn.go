@@ -226,12 +226,12 @@ func (conn *Connection) Wait() {
 func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error) {
 
 	flags = flags.ToStream()
-	requestID, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
+	_, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
 		LogError("writeFirstFrame", err)
 		return nil, nil, err
 	}
-	return newStreamWriter(writer, requestID, flags), resp, nil
+	return (*defaultStreamWriter)(writer), resp, nil
 }
 
 // Request send a nonstreamed request frame and returns response frame

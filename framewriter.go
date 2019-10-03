@@ -1,5 +1,7 @@
 package qrpc
 
+import "encoding/binary"
+
 // frameBytesWriter for writing frame bytes
 type frameBytesWriter interface {
 	// writeFrameBytes write the frame bytes atomically or error
@@ -11,9 +13,6 @@ type frameBytesWriter interface {
 type defaultFrameWriter struct {
 	fbw           frameBytesWriter
 	wbuf          []byte
-	requestID     uint64
-	cmd           Cmd
-	flags         FrameFlag
 	needRequestID bool
 }
 
@@ -25,14 +24,28 @@ func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
 // StartRequest for start a request.
 func (dfw *defaultFrameWriter) StartRequest(cmd Cmd, flags FrameFlag) {
 	dfw.needRequestID = true
+	dfw.wbuf = append(dfw.wbuf[:0],
+		0, // 4 bytes of length, filled in in endWrite
+		0,
+		0,
+		0,
+		0, // requestID start
+		0,
+		0,
+		0,
+		0,
+		0,
+		0,
+		0, // requestID end
+		byte(flags),
+		byte(cmd>>16),
+		byte(cmd>>8),
+		byte(cmd))
 }
 
 // StartWrite Write the FrameHeader.
 func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags FrameFlag) {
 
-	dfw.requestID = requestID
-	dfw.cmd = cmd
-	dfw.flags = flags
 	dfw.wbuf = append(dfw.wbuf[:0],
 		0, // 4 bytes of length, filled in in endWrite
 		0,
@@ -54,15 +67,24 @@ func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags Frame
 }
 
 func (dfw *defaultFrameWriter) Cmd() Cmd {
-	return dfw.cmd
+	return Cmd(uint32(dfw.wbuf[13])<<16 | uint32(dfw.wbuf[14])<<8 | uint32(dfw.wbuf[15]))
+}
+
+func (dfw *defaultFrameWriter) SetCmd(cmd Cmd) {
+	_ = append(dfw.wbuf[0:13], byte(cmd>>16), byte(cmd>>8), byte(cmd))
 }
 
 func (dfw *defaultFrameWriter) RequestID() uint64 {
-	return dfw.requestID
+	requestID := binary.BigEndian.Uint64(dfw.wbuf[4:])
+	return requestID
 }
 
 func (dfw *defaultFrameWriter) Flags() FrameFlag {
-	return dfw.flags
+	return FrameFlag(dfw.wbuf[12])
+}
+
+func (dfw *defaultFrameWriter) SetFlags(flags FrameFlag) {
+	_ = append(dfw.wbuf[:12], byte(flags))
 }
 
 func (dfw *defaultFrameWriter) GetWbuf() []byte {
@@ -70,7 +92,7 @@ func (dfw *defaultFrameWriter) GetWbuf() []byte {
 }
 
 // EndWrite finishes write frame
-func (dfw *defaultFrameWriter) EndWrite() error {
+func (dfw *defaultFrameWriter) EndWrite() (err error) {
 
 	length := len(dfw.wbuf) - 4
 	_ = append(dfw.wbuf[:0],
@@ -78,14 +100,15 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 		byte(length>>16),
 		byte(length>>8),
 		byte(length))
-	_ = append(dfw.wbuf[:12], byte(dfw.flags)) // flags may be changed by StreamWriter
 
-	return dfw.fbw.writeFrameBytes(dfw)
+	err = dfw.fbw.writeFrameBytes(dfw)
+	dfw.wbuf = dfw.wbuf[0:16]
+	return
 }
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
 	if end {
-		dfw.flags = dfw.flags.ToEndStream()
+		dfw.SetFlags(dfw.Flags().ToEndStream())
 	}
 	return dfw.EndWrite()
 }
@@ -118,37 +141,21 @@ func (dfw *defaultFrameWriter) WriteUint8(v uint8) {
 // WriteBytes write multiple bytes
 func (dfw *defaultFrameWriter) WriteBytes(v []byte) { dfw.wbuf = append(dfw.wbuf, v...) }
 
-type defaultStreamWriter struct {
-	w         *defaultFrameWriter
-	requestID uint64
-	flags     FrameFlag
-}
-
-// NewStreamWriter creates a StreamWriter from FrameWriter
-func NewStreamWriter(w FrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
-	dfr, ok := w.(*defaultFrameWriter)
-	if !ok {
-		return nil
-	}
-	return newStreamWriter(dfr, requestID, flags)
-}
-
-func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
-	return &defaultStreamWriter{w: w, requestID: requestID, flags: flags}
-}
+type defaultStreamWriter defaultFrameWriter
 
 func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
-	dsw.w.StartWrite(dsw.requestID, cmd, dsw.flags)
+	dfw := (*defaultFrameWriter)(dsw)
+	dfw.SetCmd(cmd)
 }
 
 func (dsw *defaultStreamWriter) RequestID() uint64 {
-	return dsw.requestID
+	return (*defaultFrameWriter)(dsw).RequestID()
 }
 
 func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
-	dsw.w.WriteBytes(v)
+	(*defaultFrameWriter)(dsw).WriteBytes(v)
 }
 
 func (dsw *defaultStreamWriter) EndWrite(end bool) error {
-	return dsw.w.StreamEndWrite(end)
+	return (*defaultFrameWriter)(dsw).StreamEndWrite(end)
 }

@@ -164,7 +164,6 @@ func main() {
 package main
 import (
     "github.com/zhiqiangxu/qrpc"
-    "fmt"
 )
 
 const (
