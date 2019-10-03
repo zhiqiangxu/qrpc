@@ -84,7 +84,7 @@ func TestCancel(t *testing.T) {
 
 func TestPerformance(t *testing.T) {
 
-	srv := &http.Server{Addr: "0.0.0.0:8888"}
+	srv := &http.Server{Addr: "0.0.0.0:9999"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "hello world xu\n")
 	})
