@@ -9,16 +9,22 @@ type frameBytesWriter interface {
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	fbw       frameBytesWriter
-	wbuf      []byte
-	requestID uint64
-	cmd       Cmd
-	flags     FrameFlag
+	fbw           frameBytesWriter
+	wbuf          []byte
+	requestID     uint64
+	cmd           Cmd
+	flags         FrameFlag
+	needRequestID bool
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames
 func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
 	return &defaultFrameWriter{fbw: fbw}
+}
+
+// StartRequest for start a request.
+func (dfw *defaultFrameWriter) StartRequest(cmd Cmd, flags FrameFlag) {
+	dfw.needRequestID = true
 }
 
 // StartWrite Write the FrameHeader.
@@ -111,3 +117,38 @@ func (dfw *defaultFrameWriter) WriteUint8(v uint8) {
 
 // WriteBytes write multiple bytes
 func (dfw *defaultFrameWriter) WriteBytes(v []byte) { dfw.wbuf = append(dfw.wbuf, v...) }
+
+type defaultStreamWriter struct {
+	w         *defaultFrameWriter
+	requestID uint64
+	flags     FrameFlag
+}
+
+// NewStreamWriter creates a StreamWriter from FrameWriter
+func NewStreamWriter(w FrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
+	dfr, ok := w.(*defaultFrameWriter)
+	if !ok {
+		return nil
+	}
+	return newStreamWriter(dfr, requestID, flags)
+}
+
+func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
+	return &defaultStreamWriter{w: w, requestID: requestID, flags: flags}
+}
+
+func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
+	dsw.w.StartWrite(dsw.requestID, cmd, dsw.flags)
+}
+
+func (dsw *defaultStreamWriter) RequestID() uint64 {
+	return dsw.requestID
+}
+
+func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
+	dsw.w.WriteBytes(v)
+}
+
+func (dsw *defaultStreamWriter) EndWrite(end bool) error {
+	return dsw.w.StreamEndWrite(end)
+}

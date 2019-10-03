@@ -222,41 +222,6 @@ func (conn *Connection) Wait() {
 	conn.wg.Wait()
 }
 
-type defaultStreamWriter struct {
-	w         *defaultFrameWriter
-	requestID uint64
-	flags     FrameFlag
-}
-
-// NewStreamWriter creates a StreamWriter from FrameWriter
-func NewStreamWriter(w FrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
-	dfr, ok := w.(*defaultFrameWriter)
-	if !ok {
-		return nil
-	}
-	return newStreamWriter(dfr, requestID, flags)
-}
-
-func newStreamWriter(w *defaultFrameWriter, requestID uint64, flags FrameFlag) StreamWriter {
-	return &defaultStreamWriter{w: w, requestID: requestID, flags: flags}
-}
-
-func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
-	dsw.w.StartWrite(dsw.requestID, cmd, dsw.flags)
-}
-
-func (dsw *defaultStreamWriter) RequestID() uint64 {
-	return dsw.requestID
-}
-
-func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
-	dsw.w.WriteBytes(v)
-}
-
-func (dsw *defaultStreamWriter) EndWrite(end bool) error {
-	return dsw.w.StreamEndWrite(end)
-}
-
 // StreamRequest is for streamed request
 func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error) {
 
