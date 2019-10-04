@@ -442,11 +442,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
 			return
 		}
-		// all write requests handled
-		if len(sc.cachedRequests) == 0 {
-			releaseWlock = true
-			return <-wfr.result
-		}
+
 		err = sc.writeBuffers()
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
@@ -466,6 +462,11 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 }
 
 func (sc *serveconn) writeBuffers() error {
+	if len(sc.cachedRequests) == 0 {
+		// nothing to do
+		return nil
+	}
+
 	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
 	if err != nil {
 		LogDebug(unsafe.Pointer(sc), "buffs.WriteTo", err)
