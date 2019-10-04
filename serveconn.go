@@ -1,7 +1,6 @@
 package qrpc
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -401,14 +400,8 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			return <-wfr.result
 		}
 
-		sc.cachedBuffs = sc.cachedBuffs[:0]
-
-		binding := sc.server.bindings[sc.idx]
-
-		// check for reader quit
-		if sc.addInflight(1) == 1 {
-
-			sc.addInflight(-1)
+		// check for reader quit, don't release wlock if reader quit
+		if !sc.addAndCheckInflight() {
 
 			select {
 			case <-sc.ctx.Done():
@@ -419,11 +412,11 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			}
 		}
 
+		binding := sc.server.bindings[sc.idx]
+		var releaseWlock bool
 		defer func() {
 
 			sc.tryFreeStreams()
-			// release wlock
-			<-sc.wlockCh
 
 			if err != nil {
 				if binding.CounterMetric != nil {
@@ -435,7 +428,13 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 					binding.CounterMetric.With(countlvs...).Add(1)
 				}
 			}
+
+			if releaseWlock {
+				<-sc.wlockCh
+			}
 		}()
+
+		sc.cachedBuffs = sc.cachedBuffs[:0]
 		sc.cachedRequests = sc.cachedRequests[:0]
 
 		sc.cachedRequests, sc.cachedBuffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, sc.cachedRequests, sc.cachedBuffs)
@@ -443,12 +442,17 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
 			return
 		}
+		// all write requests handled
 		if len(sc.cachedRequests) == 0 {
+			releaseWlock = true
 			return <-wfr.result
 		}
 		err = sc.writeBuffers()
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
+		} else {
+			// all write requests handled
+			releaseWlock = true
 		}
 
 		return <-wfr.result
@@ -494,6 +498,7 @@ func (sc *serveconn) createOrGetStream(ctx context.Context, requestID uint64, fl
 	return sc.cs.CreateOrGetStream(ctx, requestID, flags)
 }
 
+// the returned err will be non-nil only if ctx is canceled
 func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh chan writeFrameRequest, batch int, timeout time.Duration, oldRequests []writeFrameRequest, oldBuffs net.Buffers) ([]writeFrameRequest, net.Buffers, error) {
 
 	timer := time.NewTimer(timeout)
@@ -541,10 +546,6 @@ func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh cha
 
 			oldRequests = append(oldRequests, res)
 			oldBuffs = append(oldBuffs, dfw.GetWbuf())
-			if !bytes.Equal(dfw.Payload(), []byte("hello world xu")) {
-				LogError("payload", string(dfw.Payload()), "len", len(dfw.Payload()), "hlen", dfw.Length(), "cmd", dfw.Cmd(), "flags", dfw.Flags())
-				panic(fmt.Sprintf("payload:%s", string(dfw.Payload())))
-			}
 
 		case <-ctx.Done():
 			for _, request := range oldRequests {
@@ -565,13 +566,17 @@ func collectWriteFrames(ctx context.Context, result chan error, writeFrameCh cha
 	return oldRequests, oldBuffs, nil
 }
 
-func (sc *serveconn) addInflight(n int32) int32 {
-	return atomic.AddInt32(&sc.inflight, n)
+func (sc *serveconn) addAndCheckInflight() bool {
+	if atomic.AddInt32(&sc.inflight, 1) == 1 {
+		atomic.AddInt32(&sc.inflight, -1)
+		return false
+	}
+	return true
 }
 
 func (sc *serveconn) tryFreeStreams() {
 
-	if sc.addInflight(-1) == 0 {
+	if atomic.AddInt32(&sc.inflight, -1) == 0 {
 		sc.cs.Release()
 	}
 }
