@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sync"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -36,13 +37,17 @@ type Connection struct {
 	ctx context.Context
 	wg  sync.WaitGroup // wait group for goroutines
 
-	mu            sync.Mutex
-	closed        bool
-	rwc           net.Conn
-	respes        map[uint64]*response
-	loopCtx       context.Context
-	loopCancelCtx context.CancelFunc
-	loopWG        *sync.WaitGroup
+	mu              sync.Mutex
+	closed          bool
+	rwc             net.Conn
+	respes          map[uint64]*response
+	loopCtx         context.Context
+	loopCancelCtx   context.CancelFunc
+	loopBytesWriter *Writer
+	loopWG          *sync.WaitGroup
+
+	cachedRequests []writeFrameRequest
+	cachedBuffs    net.Buffers
 
 	cs *ConnStreams
 }
@@ -143,8 +148,10 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 
 	c := &Connection{
 		rwc: rwc, addrs: addr, conf: conf, subscriber: f,
-		writeFrameCh: make(chan writeFrameRequest), respes: make(map[uint64]*response),
-		cs: &ConnStreams{}, ctx: ctx, cancelCtx: cancelCtx,
+		writeFrameCh: make(chan writeFrameRequest, conf.WriteFrameChSize), respes: make(map[uint64]*response),
+		cachedRequests: make([]writeFrameRequest, 0, conf.WriteFrameChSize),
+		cachedBuffs:    make(net.Buffers, 0, conf.WriteFrameChSize),
+		cs:             &ConnStreams{}, ctx: ctx, cancelCtx: cancelCtx,
 		reconnect: reconnect}
 
 	if conf.Handler != nil {
@@ -154,6 +161,7 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 	if rwc != nil {
 		// loopxxx should be paired with rwc
 		c.loopCtx, c.loopCancelCtx = context.WithCancel(ctx)
+		c.loopBytesWriter = NewWriterWithTimeout(c.loopCtx, rwc, conf.WriteTimeout)
 	}
 	GoFunc(&c.wg, c.loop)
 	return c
@@ -217,6 +225,7 @@ func (conn *Connection) connect() error {
 			conn.rwc = rwc
 			conn.loopCtx = ctx
 			conn.loopCancelCtx = cancelCtx
+			conn.loopBytesWriter = NewWriterWithTimeout(conn.loopCtx, rwc, conn.conf.WriteTimeout)
 			conn.mu.Unlock()
 			return nil
 		}
@@ -513,42 +522,47 @@ func (conn *Connection) writeFrames() (err error) {
 
 	defer conn.loopCancelCtx()
 
-	writer := NewWriterWithTimeout(conn.loopCtx, conn.rwc, conn.conf.WriteTimeout)
-
 	for {
-		select {
-		case res := <-conn.writeFrameCh:
-			dfw := res.dfw
-			flags := dfw.Flags()
-			requestID := dfw.RequestID()
+		conn.cachedRequests = conn.cachedRequests[:0]
+		conn.cachedBuffs = conn.cachedBuffs[:0]
 
-			if flags.IsRst() {
-				s := conn.cs.GetStream(requestID, flags)
-				if s == nil {
-					res.result <- ErrRstNonExistingStream
-					break
-				}
-				// for rst frame, AddOutFrame returns false when no need to send the frame
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- nil
-					break
-				}
-			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, _ := conn.cs.CreateOrGetStream(conn.loopCtx, requestID, flags)
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- ErrWriteAfterCloseSelf
-					break
-				}
-			}
-
-			_, err := writer.Write(dfw.GetWbuf())
-			res.result <- err
-			if err != nil {
-				LogError("clientconn Write", err)
-				return err
-			}
-		case <-conn.loopCtx.Done():
-			return conn.loopCtx.Err()
+		conn.cachedRequests, conn.cachedBuffs, err = collectWriteFrames(conn.loopCtx, nil, conn.writeFrameCh, conn.conf.WriteFrameChSize, time.Microsecond*10, conn.cachedRequests, conn.cachedBuffs)
+		if err != nil {
+			return
+		}
+		err = conn.writeBuffers()
+		if err != nil {
+			return
 		}
 	}
+}
+
+func (conn *Connection) writeBuffers() error {
+	if len(conn.cachedRequests) == 0 {
+		// nothing to do
+		return nil
+	}
+
+	// LogInfo("buff size", len(conn.cachedRequests))
+	_, err := conn.loopBytesWriter.writeBuffers(&conn.cachedBuffs)
+	if err != nil {
+		LogDebug(unsafe.Pointer(conn), "Connection.writeBuffers", err)
+
+		if opErr, ok := err.(*net.OpError); ok {
+			err = opErr.Err
+		}
+		for idx, request := range conn.cachedRequests {
+			if len(conn.cachedBuffs[idx]) != 0 {
+				request.result <- err
+			} else {
+				request.result <- nil
+			}
+		}
+		return err
+	}
+	for _, request := range conn.cachedRequests {
+		request.result <- nil
+	}
+
+	return nil
 }
