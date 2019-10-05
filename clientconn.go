@@ -113,7 +113,15 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 		copy[i], copy[j] = copy[j], copy[i]
 	})
 
-	rwc, err := net.DialTimeout("tcp", copy[len(copy)-1], conf.DialTimeout)
+	var (
+		rwc net.Conn
+		err error
+	)
+	if conf.OverlayNetwork != nil {
+		rwc, err = conf.OverlayNetwork(copy[len(copy)-1], conf.DialTimeout)
+	} else {
+		rwc, err = net.DialTimeout("tcp", copy[len(copy)-1], conf.DialTimeout)
+	}
 	if err != nil {
 		LogError("initconnect DialTimeout", err)
 		rwc = nil
@@ -191,7 +199,16 @@ func (conn *Connection) connect() error {
 		conn.idx++
 		count++
 
-		rwc, err := net.DialTimeout("tcp", addr, conn.conf.DialTimeout)
+		var (
+			rwc net.Conn
+			err error
+		)
+		if conn.conf.OverlayNetwork != nil {
+			rwc, err = conn.conf.OverlayNetwork(addr, conn.conf.DialTimeout)
+		} else {
+			rwc, err = net.DialTimeout("tcp", addr, conn.conf.DialTimeout)
+		}
+
 		if err != nil {
 			LogError("connect DialTimeout", err)
 		} else {
