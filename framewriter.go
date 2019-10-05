@@ -1,7 +1,6 @@
 package qrpc
 
 import (
-	"context"
 	"encoding/binary"
 )
 
@@ -9,8 +8,6 @@ import (
 type frameBytesWriter interface {
 	// writeFrameBytes write the frame bytes atomically or error
 	writeFrameBytes(dfw *defaultFrameWriter) error
-	getStream(requestID uint64, flags FrameFlag) *Stream
-	createOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool)
 }
 
 // defaultFrameWriter is responsible for write frames
@@ -71,14 +68,6 @@ func (dfw *defaultFrameWriter) Flags() FrameFlag {
 
 func (dfw *defaultFrameWriter) SetFlags(flags FrameFlag) {
 	_ = append(dfw.wbuf[:12], byte(flags))
-}
-
-func (dfw *defaultFrameWriter) GetStream(requestID uint64, flags FrameFlag) *Stream {
-	return dfw.fbw.getStream(requestID, flags)
-}
-
-func (dfw *defaultFrameWriter) CreateOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
-	return dfw.fbw.createOrGetStream(ctx, requestID, flags)
 }
 
 func (dfw *defaultFrameWriter) GetWbuf() []byte {

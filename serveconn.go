@@ -437,9 +437,9 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		sc.cachedBuffs = sc.cachedBuffs[:0]
 		sc.cachedRequests = sc.cachedRequests[:0]
 
-		sc.cachedRequests, sc.cachedBuffs, err = collectWriteFrames(sc.ctx, wfr.result, sc.writeFrameCh, binding.WriteFrameChSize, time.Microsecond*100, sc.cachedRequests, sc.cachedBuffs)
+		err = sc.collectWriteFrames(binding.WriteFrameChSize, wfr.result)
 		if err != nil {
-			LogDebug(unsafe.Pointer(sc), "collectWriteFrames", err)
+			LogDebug(unsafe.Pointer(sc), "sc.collectWriteFrames", err)
 			return
 		}
 
@@ -467,6 +467,8 @@ func (sc *serveconn) writeBuffers() error {
 		return nil
 	}
 
+	// LogInfo("sc buff size", len(sc.cachedRequests))
+
 	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
 	if err != nil {
 		LogDebug(unsafe.Pointer(sc), "serveconn.writeBuffers", err)
@@ -491,17 +493,7 @@ func (sc *serveconn) writeBuffers() error {
 	return nil
 }
 
-func (sc *serveconn) getStream(requestID uint64, flags FrameFlag) *Stream {
-	return sc.cs.GetStream(requestID, flags)
-}
-
-func (sc *serveconn) createOrGetStream(ctx context.Context, requestID uint64, flags FrameFlag) (*Stream, bool) {
-	return sc.cs.CreateOrGetStream(ctx, requestID, flags)
-}
-
-// the returned err will be non-nil only if ctx is canceled
-func collectWriteFrames(ctx context.Context, currentResult chan error, writeFrameCh chan writeFrameRequest, batch int, timeout time.Duration, oldRequests []writeFrameRequest, oldBuffs net.Buffers) ([]writeFrameRequest, net.Buffers, error) {
-
+func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) error {
 	var (
 		res       writeFrameRequest
 		dfw       *defaultFrameWriter
@@ -509,115 +501,62 @@ func collectWriteFrames(ctx context.Context, currentResult chan error, writeFram
 		requestID uint64
 	)
 
-	jumped := false
+	timeout := time.Microsecond * 100
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
 
-BATCH_TIMER:
-	if jumped || currentResult != nil {
-
-		timer := time.NewTimer(timeout)
-		defer timer.Stop()
-		var gotCurrent bool
-		for i := 0; i < batch; i++ {
-			select {
-			case res = <-writeFrameCh:
-				if res.result == currentResult {
-					gotCurrent = true
-				}
-				dfw = res.dfw
-				flags = dfw.Flags()
-				requestID = dfw.RequestID()
-
-				if flags.IsRst() {
-					s := dfw.GetStream(requestID, flags)
-					if s == nil {
-						res.result <- ErrRstNonExistingStream
-						break
-					}
-					// for rst frame, AddOutFrame returns false when no need to send the frame
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- nil
-						break
-					}
-				} else if !flags.IsPush() { // skip stream logic if PushFlag set
-					s, loaded := dfw.CreateOrGetStream(ctx, requestID, flags)
-					if !loaded {
-						LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
-					}
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- ErrWriteAfterCloseSelf
-						break
-					}
-				}
-
-				oldRequests = append(oldRequests, res)
-				oldBuffs = append(oldBuffs, dfw.GetWbuf())
-
-			case <-ctx.Done():
-				for _, request := range oldRequests {
-					request.result <- ctx.Err()
-				}
-				return oldRequests, oldBuffs, ctx.Err()
-			case <-timer.C:
-				if currentResult != nil && !gotCurrent {
-					timer.Stop()
-					timer = time.NewTimer(timeout)
-					batch++
-					continue
-				}
-				return oldRequests, oldBuffs, nil
+	var canQuit bool
+	for i := 0; i < batch; i++ {
+		select {
+		case res = <-sc.writeFrameCh:
+			if res.result == currentResult {
+				canQuit = true
 			}
+			dfw = res.dfw
+			flags = dfw.Flags()
+			requestID = dfw.RequestID()
+
+			if flags.IsRst() {
+				s := sc.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrRstNonExistingStream
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
+				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+				if !loaded {
+					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+				}
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			sc.cachedRequests = append(sc.cachedRequests, res)
+			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
+
+		case <-sc.ctx.Done():
+			for _, request := range sc.cachedRequests {
+				request.result <- sc.ctx.Err()
+			}
+			return sc.ctx.Err()
+		case <-timer.C:
+			if !canQuit {
+				timer.Stop()
+				timer = time.NewTimer(timeout)
+				batch++
+				continue
+			}
+			return nil
 		}
-	} else {
-		// called from dedicated wg
-		// wait for first request
-		for {
-			select {
-			case res = <-writeFrameCh:
-				dfw = res.dfw
-				flags = dfw.Flags()
-				requestID = dfw.RequestID()
-
-				if flags.IsRst() {
-					s := dfw.GetStream(requestID, flags)
-					if s == nil {
-						res.result <- ErrRstNonExistingStream
-						break
-					}
-					// for rst frame, AddOutFrame returns false when no need to send the frame
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- nil
-						break
-					}
-				} else if !flags.IsPush() { // skip stream logic if PushFlag set
-					s, loaded := dfw.CreateOrGetStream(ctx, requestID, flags)
-					if !loaded {
-						LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
-					}
-					if !s.AddOutFrame(requestID, flags) {
-						res.result <- ErrWriteAfterCloseSelf
-						break
-					}
-				}
-
-				oldRequests = append(oldRequests, res)
-				oldBuffs = append(oldBuffs, dfw.GetWbuf())
-
-			case <-ctx.Done():
-				for _, request := range oldRequests {
-					request.result <- ctx.Err()
-				}
-				return oldRequests, oldBuffs, ctx.Err()
-			}
-			if len(oldRequests) > 0 {
-				break
-			}
-		}
-		jumped = true
-		batch--
-		goto BATCH_TIMER
 	}
-
-	return oldRequests, oldBuffs, nil
+	return nil
 }
 
 func (sc *serveconn) addAndCheckInflight() bool {
