@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"net"
 	"net/http"
 	"sync"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/zhiqiangxu/qrpc"
+	"google.golang.org/grpc"
+	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
 const (
@@ -256,29 +260,62 @@ func TestHTTPPerformance(t *testing.T) {
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
-// func TestGRPCPerformance(t *testing.T) {
-// 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	c := pb.NewGreeterClient(conn)
-// 	name := "xu"
-// 	startTime := time.Now()
-// 	i := 0
-// 	for {
-// 		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		i++
+const grpcAddr = "localhost:50051"
 
-// 		if i > n {
-// 			break
-// 		}
-// 	}
-// 	endTime := time.Now()
-// 	fmt.Println(n, "request took", endTime.Sub(startTime))
-// }
+func TestGRPCPerformance(t *testing.T) {
+	go startGRPCServer()
+	time.Sleep(time.Second)
+
+	conn, err := grpc.Dial(grpcAddr, grpc.WithInsecure())
+	if err != nil {
+		panic(err)
+	}
+	c := pb.NewGreeterClient(conn)
+	name := "xu"
+	startTime := time.Now()
+	i := 0
+	var wg sync.WaitGroup
+	for {
+		qrpc.GoFunc(&wg, func() {
+			_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
+			if err != nil {
+				panic(err)
+			}
+		})
+
+		i++
+
+		if i > n {
+			break
+		}
+	}
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
+}
+
+// grpcserver is used to implement helloworld.GreeterServer.
+type grpcserver struct {
+	// pb.UnimplementedGreeterServer
+}
+
+// SayHello implements helloworld.GreeterServer
+func (s *grpcserver) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+	// log.Printf("Received: %v", in.GetName())
+	return &pb.HelloReply{Message: "Hello " + in.GetName()}, nil
+}
+
+func startGRPCServer() {
+	lis, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterGreeterServer(s, &grpcserver{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
 
 const (
 	HelloCmd qrpc.Cmd = iota
