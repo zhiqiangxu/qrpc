@@ -14,6 +14,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/zhiqiangxu/qrpc"
+	"github.com/zhiqiangxu/qrpc/sugar"
 )
 
 const (
@@ -127,6 +128,40 @@ func TestPerformance(t *testing.T) {
 
 	t.Log(n, "request took", endTime.Sub(startTime))
 
+}
+
+type serviceClient struct {
+	Hello func(ctx context.Context, str string) (r Result)
+}
+
+func TestSugarPerformance(t *testing.T) {
+	go startServerWithSugar()
+	time.Sleep(time.Second)
+
+	client := sugar.NewClient(SugarCmd, SugarErrCmd, []string{addr}, qrpc.ConnectionConfig{})
+	var service serviceClient
+	client.UserService("demo", &service)
+
+	i := 0
+	var wg sync.WaitGroup
+	startTime := time.Now()
+	for {
+
+		qrpc.GoFunc(&wg, func() {
+			result := service.Hello(context.Background(), "hi")
+			if !result.OK() {
+				panic(fmt.Sprintf("fail:%v", result))
+			}
+		})
+		i++
+		if i > n {
+			break
+		}
+	}
+
+	wg.Wait()
+	endTime := time.Now()
+	t.Log(n, "request took", endTime.Sub(startTime))
 }
 
 func TestAPI(t *testing.T) {
@@ -283,6 +318,8 @@ func TestHTTPPerformance(t *testing.T) {
 const (
 	HelloCmd qrpc.Cmd = iota
 	HelloRespCmd
+	SugarCmd
+	SugarErrCmd
 	ClientCmd
 	ClientRespCmd
 )
@@ -299,6 +336,51 @@ func startServer() {
 			panic(err)
 		}
 	})
+	bindings := []qrpc.ServerBinding{
+		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000}}
+	server := qrpc.NewServer(bindings)
+	err := server.ListenAndServe()
+	if err != nil {
+		panic(err)
+	}
+}
+
+type service struct {
+}
+
+func (s *service) Hello(ctx context.Context, str string) (r Result) {
+	r.Value = "hi " + str
+	return
+}
+
+type Result struct {
+	BaseResp
+	Value string
+}
+
+type BaseResp struct {
+	Err int
+	Msg string
+}
+
+func (b *BaseResp) OK() bool {
+	return b.Err == 0
+}
+
+func (b *BaseResp) SetError(err error) {
+	if err == nil {
+		return
+	}
+	b.Err = 1
+	b.Msg = err.Error()
+}
+
+func startServerWithSugar() {
+	var s service
+	svc := sugar.NewService(s, SugarErrCmd)
+	svc.RegisterService("demo", &s)
+	handler := qrpc.NewServeMux()
+	handler.Handle(SugarCmd, svc)
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000}}
 	server := qrpc.NewServer(bindings)

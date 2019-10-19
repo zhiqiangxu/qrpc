@@ -3,13 +3,13 @@
 **qrpc** 提供完整的服务端及客户端功能，并支持以下4种特性使得`rpc`变得极为容易:
 
 > *  `阻塞` 或 `非阻塞`
-> *  `流式` 或 `非流式`（一般传音视频才会用到，相对复杂一些）
+> *  `流式` 或 `非流式`
 > *  `主动推送`
-> *  `双向调用`(`server`也可以主动调用`client`)
+> *  `双向调用`
 
 默认是阻塞模式，也就是同一个长链接的请求是串行处理，类似`http/1.1`，但是通过微小的改动就可以切换到其他模式。
 
-此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`。
+此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`；以及语法糖功能，使得服务的注册和调用极大地便利化，详情参考[测试用例](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go)中的`TestSugarPerformance`。（由于用到了反射，因此会损失一部分性能，后续会增加基于代码生成的方式，届时性能将零损耗，敬请期待！）
 
 ------
 
@@ -321,7 +321,7 @@ func main() {
 
 ## 双向调用
 
-前面的`demo`都是`client`调用`server`，其实`client`也可以注册回调让`server`调，参考这个[栗子](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go#L342)。
+前面的`demo`都是`client`调用`server`，其实`client`也可以注册回调让`server`调，参考[测试用例](https://github.com/zhiqiangxu/qrpc/blob/master/test/qrpc_test.go)中的`TestClientHandler`。
 
 ------
 
