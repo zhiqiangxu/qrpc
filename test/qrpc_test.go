@@ -140,7 +140,7 @@ func TestSugarPerformance(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// 生成客户端
-	client := sugar.NewClient(SugarCmd, SugarErrCmd, []string{addr}, qrpc.ConnectionConfig{})
+	client := sugar.NewClient(SugarCmd /*所有服务将通过这个cmd进行调用*/, SugarErrCmd /*异常时响应的cmd*/, []string{addr}, qrpc.ConnectionConfig{})
 	// 声明服务，字段名即方法名，字段类型是函数
 	// 第一个参数必须是context.Context
 	// 第二个参数是该方法的详细参数（所有需要的参数都必须封装到一个类型中）
