@@ -135,12 +135,19 @@ type serviceClient struct {
 }
 
 func TestSugarPerformance(t *testing.T) {
+	// 启动服务端
 	go startServerWithSugar()
 	time.Sleep(time.Second)
 
+	// 生成客户端
 	client := sugar.NewClient(SugarCmd, SugarErrCmd, []string{addr}, qrpc.ConnectionConfig{})
+	// 声明服务，字段名即方法名，字段类型是函数
+	// 第一个参数必须是context.Context
+	// 第二个参数是该方法的详细参数（所有需要的参数都必须封装到一个类型中）
+	// 返回值只有一个，且它的指针类型必须实现`SetError(error)`
 	var service serviceClient
-	client.UserService("demo", &service)
+	// 使用服务，service中的函数指针将被自动替换成rpc方法
+	client.UserService("demo" /*命名空间*/, &service)
 
 	i := 0
 	var wg sync.WaitGroup
@@ -148,6 +155,7 @@ func TestSugarPerformance(t *testing.T) {
 	for {
 
 		qrpc.GoFunc(&wg, func() {
+			// 通过被替换的函数指针调用服务
 			result := service.Hello(context.Background(), "hi")
 			if !result.OK() {
 				panic(fmt.Sprintf("fail:%v", result))
@@ -376,9 +384,15 @@ func (b *BaseResp) SetError(err error) {
 }
 
 func startServerWithSugar() {
+	// 最终提供服务的实例
 	var s service
+	// NewService也是一个qrpc.Handler，并且它会自动注册服务的方法
 	svc := sugar.NewService(s, SugarErrCmd)
-	svc.RegisterService("demo", &s)
+
+	// 将service的方法注册进来
+	svc.RegisterService("demo" /*命名空间*/, &s)
+
+	// 后面的流程跟之前一样，将svc这个qrpc.Handler注册到server即可
 	handler := qrpc.NewServeMux()
 	handler.Handle(SugarCmd, svc)
 	bindings := []qrpc.ServerBinding{
