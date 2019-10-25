@@ -23,7 +23,7 @@ type Service struct {
 }
 
 // NewService creates a Service
-func NewService(s interface{}, errCmd qrpc.Cmd) *Service {
+func NewService(errCmd qrpc.Cmd) *Service {
 	return &Service{errCmd: errCmd, callback: make(map[string]MethodCall)}
 }
 

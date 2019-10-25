@@ -387,7 +387,7 @@ func startServerWithSugar() {
 	// 最终提供服务的实例
 	var s service
 	// NewService也是一个qrpc.Handler，并且它会自动注册服务的方法
-	svc := sugar.NewService(s, SugarErrCmd)
+	svc := sugar.NewService(SugarErrCmd)
 
 	// 将service的方法注册进来
 	svc.RegisterService("demo" /*命名空间*/, &s)
