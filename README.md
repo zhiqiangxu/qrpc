@@ -9,7 +9,7 @@
 
 默认是阻塞模式，也就是同一个长链接的请求是串行处理，类似`http/1.1`，但是通过微小的改动就可以切换到其他模式。
 
-此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`；以及代码生成功能，使得服务的注册和调用极大地便利化，详情参考[codegen demo](https://github.com/zhiqiangxu/qrpc-demo/blob/master/codegen/main.go)
+此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`；以及代码生成功能，使得服务的注册和调用极大地便利化，详情参考[`codegen demo`](https://github.com/zhiqiangxu/qrpc-demo/blob/master/codegen/main.go)。
 
 ------
 
