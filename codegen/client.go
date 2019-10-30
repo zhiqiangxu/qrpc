@@ -13,7 +13,7 @@ import (
 type Client struct {
 	cmd    qrpc.Cmd
 	errCmd qrpc.Cmd
-	idx    int32
+	idx    uint32
 	conns  []*qrpc.Connection
 }
 
@@ -46,7 +46,7 @@ func (client *Client) Request(ctx context.Context, ns, name string, inBytes []by
 		frame     *qrpc.Frame
 		requestID uint64
 	)
-	idx := atomic.AddInt32(&client.idx, 1)
+	idx := atomic.AddUint32(&client.idx, 1)
 	for i := range client.conns {
 		j := (i + int(idx)) % len(client.conns)
 		requestID, resp, err = client.conns[j].Request(client.cmd, qrpc.NBFlag, bytes)
