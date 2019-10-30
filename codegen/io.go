@@ -1,4 +1,4 @@
-package sugar
+package codegen
 
 // Marshaler for Marshal/Unmarshal
 type Marshaler interface {

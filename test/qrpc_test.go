@@ -14,7 +14,6 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/zhiqiangxu/qrpc"
-	"github.com/zhiqiangxu/qrpc/sugar"
 )
 
 const (
@@ -128,48 +127,6 @@ func TestPerformance(t *testing.T) {
 
 	t.Log(n, "request took", endTime.Sub(startTime))
 
-}
-
-type serviceClient struct {
-	Hello func(ctx context.Context, str string) (r Result)
-}
-
-func TestSugarPerformance(t *testing.T) {
-	// 启动服务端
-	go startServerWithSugar()
-	time.Sleep(time.Second)
-
-	// 生成客户端
-	client := sugar.NewClient(SugarCmd /*所有服务将通过这个cmd进行调用*/, SugarErrCmd /*异常时响应的cmd*/, []string{addr}, qrpc.ConnectionConfig{})
-	// 声明服务，字段名即方法名，字段类型是函数
-	// 第一个参数必须是context.Context
-	// 第二个参数是该方法的详细参数（所有需要的参数都必须封装到一个类型中）
-	// 返回值只有一个，且它的指针类型必须实现`SetError(error)`
-	var service serviceClient
-	// 使用服务，service中的函数指针将被自动替换成rpc方法
-	client.UserService("demo" /*命名空间*/, &service)
-
-	i := 0
-	var wg sync.WaitGroup
-	startTime := time.Now()
-	for {
-
-		qrpc.GoFunc(&wg, func() {
-			// 通过被替换的函数指针调用服务
-			result := service.Hello(context.Background(), "hi")
-			if !result.OK() {
-				panic(fmt.Sprintf("fail:%v", result))
-			}
-		})
-		i++
-		if i > n {
-			break
-		}
-	}
-
-	wg.Wait()
-	endTime := time.Now()
-	t.Log(n, "request took", endTime.Sub(startTime))
 }
 
 func TestAPI(t *testing.T) {
@@ -326,8 +283,6 @@ func TestHTTPPerformance(t *testing.T) {
 const (
 	HelloCmd qrpc.Cmd = iota
 	HelloRespCmd
-	SugarCmd
-	SugarErrCmd
 	ClientCmd
 	ClientRespCmd
 )
@@ -381,27 +336,6 @@ func (b *BaseResp) SetError(err error) {
 	}
 	b.Err = 1
 	b.Msg = err.Error()
-}
-
-func startServerWithSugar() {
-	// 最终提供服务的实例
-	var s service
-	// NewService也是一个qrpc.Handler，并且它会自动注册服务的方法
-	svc := sugar.NewService(SugarErrCmd)
-
-	// 将service的方法注册进来
-	svc.RegisterService("demo" /*命名空间*/, &s)
-
-	// 后面的流程跟之前一样，将svc这个qrpc.Handler注册到server即可
-	handler := qrpc.NewServeMux()
-	handler.Handle(SugarCmd, svc)
-	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000}}
-	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		panic(err)
-	}
 }
 
 func startServerForCancel() {
