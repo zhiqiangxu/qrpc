@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package pb;
+
+
+message RpcRequest {
+    string NS  = 1;
+    string method   = 2;
+    bytes  params   = 3;
+}

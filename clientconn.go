@@ -186,6 +186,7 @@ func (conn *Connection) loop() {
 		<-conn.loopCtx.Done()
 		conn.closeRWC()
 		conn.loopWG.Wait()
+		conn.freeStreams()
 
 		// close & quit if not reconnect; otherwise automatically reconnect
 		if !conn.reconnect {
@@ -392,6 +393,9 @@ func (conn *Connection) closeRWC() {
 	}
 	conn.respes = make(map[uint64]*response)
 
+}
+
+func (conn *Connection) freeStreams() {
 	conn.cs.Release()
 	conn.cs = &ConnStreams{}
 }
@@ -457,7 +461,13 @@ func (conn *Connection) readFrames() {
 		conn.mu.Lock()
 		resp, ok := conn.respes[frame.RequestID]
 		if !ok {
+			rwcClosed := conn.rwc == nil
 			conn.mu.Unlock()
+			if rwcClosed {
+				// order: 1. got a frame 2. closeRWC 3.!ok
+				// just ignore it
+				return
+			}
 			if conn.conf.Handler != nil {
 				if !frame.FromServer() {
 					LogError("clientconn get RequestFrame.RequestID not even")
