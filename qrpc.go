@@ -17,8 +17,6 @@ const (
 	NBFlag
 	// PushFlag mean the frame is pushed from server
 	PushFlag
-	// CompressFlag indicate packet is compressed (TODO)
-	CompressFlag
 )
 
 // ToNonStream convert flg to nonstreamed flag
@@ -63,11 +61,6 @@ func (flg FrameFlag) IsDone() bool {
 // IsPush returns if frame is pushed
 func (flg FrameFlag) IsPush() bool {
 	return flg&PushFlag != 0
-}
-
-// IsCompressed means whether the frame is compressed
-func (flg FrameFlag) IsCompressed() bool {
-	return flg&CompressFlag != 0
 }
 
 // contextKey is a value for use with context.WithValue. It's used as

@@ -345,6 +345,36 @@ func startServer() {
 	}
 }
 
+type service struct {
+}
+
+func (s *service) Hello(ctx context.Context, str string) (r Result) {
+	r.Value = "hi " + str
+	return
+}
+
+type Result struct {
+	BaseResp
+	Value string
+}
+
+type BaseResp struct {
+	Err int
+	Msg string
+}
+
+func (b *BaseResp) OK() bool {
+	return b.Err == 0
+}
+
+func (b *BaseResp) SetError(err error) {
+	if err == nil {
+		return
+	}
+	b.Err = 1
+	b.Msg = err.Error()
+}
+
 func startServerForCancel() {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
