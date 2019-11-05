@@ -99,9 +99,10 @@ func TestPerformance(t *testing.T) {
 		}
 	}()
 
+	time.Sleep(time.Second)
 	go startServer()
 	time.Sleep(time.Second)
-	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{WriteFrameChSize: 0}, nil)
+	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{WriteFrameChSize: 1000}, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -109,12 +110,12 @@ func TestPerformance(t *testing.T) {
 	var wg sync.WaitGroup
 	startTime := time.Now()
 	for {
-		_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-		if err != nil {
-			panic(err)
-		}
-		qrpc.GoFunc(&wg, func() {
 
+		qrpc.GoFunc(&wg, func() {
+			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+			if err != nil {
+				panic(err)
+			}
 			frame, err := resp.GetFrame()
 			if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 				panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))

@@ -46,6 +46,7 @@ type serveconn struct {
 	readFrameCh    chan readFrameResult   // written by conn.readFrames
 	writeFrameCh   chan writeFrameRequest // written by FrameWriter
 	inflight       int32
+	ridGen         uint64
 	wlockCh        chan struct{}
 	cachedRequests []writeFrameRequest
 	cachedBuffs    net.Buffers
@@ -467,6 +468,29 @@ func (sc *serveconn) writeBuffers() error {
 		return nil
 	}
 
+	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	// must prepare respes before actually write
+	ci.l.Lock()
+	if ci.closed {
+		for _, request := range sc.cachedRequests {
+			request.result <- ErrConnAlreadyClosed
+		}
+		ci.l.Unlock()
+	}
+	for idx, request := range sc.cachedRequests {
+		if request.dfw.resp != nil {
+			requestID := request.dfw.RequestID()
+			if ci.respes[requestID] != nil {
+				request.result <- ErrNoNewUUID
+				request.result = nil
+				sc.cachedBuffs[idx] = nil
+				continue
+			}
+			ci.respes[requestID] = request.dfw.resp
+			request.dfw.resp = nil
+		}
+	}
+	ci.l.Unlock()
 	// LogInfo("sc buff size", len(sc.cachedRequests))
 
 	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
@@ -481,13 +505,17 @@ func (sc *serveconn) writeBuffers() error {
 			if len(sc.cachedBuffs[idx]) != 0 {
 				request.result <- err
 			} else {
-				request.result <- nil
+				if request.result != nil {
+					request.result <- nil
+				}
 			}
 		}
 		return err
 	}
 	for _, request := range sc.cachedRequests {
-		request.result <- nil
+		if request.result != nil {
+			request.result <- nil
+		}
 	}
 
 	return nil
@@ -582,58 +610,27 @@ func (sc *serveconn) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint64, 
 	return requestID, resp, err
 }
 
+func (sc *serveconn) nextRequestID() uint64 {
+	ridGen := atomic.AddUint64(&sc.ridGen, 1)
+	return 2 * ridGen
+}
+
 func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
-	var (
-		requestID uint64
-		suc       bool
-	)
 
 	if atomic.LoadUint32(&sc.untrack) != 0 {
 		return 0, nil, nil, ErrConnAlreadyClosed
 	}
 
-	requestID = PoorManUUID(false)
-	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.l.Lock()
-	if ci.respes == nil {
-		ci.respes = make(map[uint64]*response)
-	}
-	i := 0
-	for {
-		_, ok := ci.respes[requestID]
-		if !ok {
-			suc = true
-			break
-		}
-
-		i++
-		if i >= 3 {
-			break
-		}
-		requestID = PoorManUUID(false)
-	}
-
-	if !suc {
-		ci.l.Unlock()
-		return 0, nil, nil, ErrNoNewUUID
-	}
+	requestID := sc.nextRequestID()
 	resp := &response{Frame: make(chan *Frame, 1)}
-	ci.respes[requestID] = resp
-	ci.l.Unlock()
 
 	writer := newFrameWriter(sc)
+	writer.resp = resp
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
 
 	if err != nil {
-		ci.l.Lock()
-		resp, ok := ci.respes[requestID]
-		if ok {
-			resp.Close()
-			delete(ci.respes, requestID)
-		}
-		ci.l.Unlock()
 		return 0, nil, nil, err
 	}
 
@@ -668,8 +665,13 @@ func (sc *serveconn) closeUntracked() error {
 	ci.closed = true
 	closeNotify := ci.closeNotify
 	ci.closeNotify = nil
+	respes := ci.respes
+	ci.respes = nil
 	ci.l.Unlock()
 
+	for _, v := range respes {
+		v.Close()
+	}
 	for _, f := range closeNotify {
 		f()
 	}

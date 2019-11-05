@@ -15,6 +15,7 @@ type frameBytesWriter interface {
 type defaultFrameWriter struct {
 	fbw  frameBytesWriter
 	wbuf []byte
+	resp *response
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames

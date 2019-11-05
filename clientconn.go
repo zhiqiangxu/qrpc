@@ -2,14 +2,12 @@ package qrpc
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/binary"
 	"errors"
-	"math"
 	mathrand "math/rand"
 	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 )
@@ -37,11 +35,15 @@ type Connection struct {
 	ctx context.Context
 	wg  sync.WaitGroup // wait group for goroutines
 
+	// access by atomic
+	closed uint32
+	ridGen uint64
+
+	// access by mutex
 	mu              sync.Mutex
-	closed          bool
 	rwc             net.Conn
 	respes          map[uint64]*response
-	loopCtx         context.Context
+	loopCtx         *context.Context
 	loopCancelCtx   context.CancelFunc
 	loopBytesWriter *Writer
 	loopWG          *sync.WaitGroup
@@ -160,8 +162,10 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 
 	if rwc != nil {
 		// loopxxx should be paired with rwc
-		c.loopCtx, c.loopCancelCtx = context.WithCancel(ctx)
-		c.loopBytesWriter = NewWriterWithTimeout(c.loopCtx, rwc, conf.WriteTimeout)
+		loopCtx, loopCancelCtx := context.WithCancel(ctx)
+		c.loopCancelCtx = loopCancelCtx
+		atomic.StorePointer((*unsafe.Pointer)((unsafe.Pointer)(&c.loopCtx)), unsafe.Pointer(&loopCtx))
+		c.loopBytesWriter = NewWriterWithTimeout(loopCtx, rwc, conf.WriteTimeout)
 	}
 	GoFunc(&c.wg, c.loop)
 	return c
@@ -183,10 +187,10 @@ func (conn *Connection) loop() {
 			conn.writeFrames()
 		})
 
-		<-conn.loopCtx.Done()
+		<-(*conn.loopCtx).Done()
 		conn.closeRWC()
 		conn.loopWG.Wait()
-		conn.freeStreams()
+		conn.endLoop()
 
 		// close & quit if not reconnect; otherwise automatically reconnect
 		if !conn.reconnect {
@@ -194,6 +198,10 @@ func (conn *Connection) loop() {
 			return
 		}
 	}
+}
+
+func (conn *Connection) atomicLoopCtx() context.Context {
+	return *(*context.Context)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&conn.loopCtx))))
 }
 
 func (conn *Connection) connect() error {
@@ -224,9 +232,9 @@ func (conn *Connection) connect() error {
 			ctx, cancelCtx := context.WithCancel(conn.ctx)
 			conn.mu.Lock()
 			conn.rwc = rwc
-			conn.loopCtx = ctx
+			atomic.StorePointer((*unsafe.Pointer)((unsafe.Pointer)(&conn.loopCtx)), unsafe.Pointer(&ctx))
 			conn.loopCancelCtx = cancelCtx
-			conn.loopBytesWriter = NewWriterWithTimeout(conn.loopCtx, rwc, conn.conf.WriteTimeout)
+			conn.loopBytesWriter = NewWriterWithTimeout(ctx, rwc, conn.conf.WriteTimeout)
 			conn.mu.Unlock()
 			return nil
 		}
@@ -276,63 +284,29 @@ var (
 	ErrNoNewUUID = errors.New("no new uuid available temporary")
 	// ErrConnAlreadyClosed when try to operate on an already closed conn
 	ErrConnAlreadyClosed = errors.New("connection already closed")
-	// ErrConnNotConnected when request not connected
-	ErrConnNotConnected = errors.New("connection not connected")
 )
 
-func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
-	var (
-		requestID uint64
-		suc       bool
-	)
+func (conn *Connection) nextRequestID() uint64 {
+	ridGen := atomic.AddUint64(&conn.ridGen, 1)
+	return 2*ridGen + 1
+}
 
-	requestID = PoorManUUID(true)
-	resp := &response{Frame: make(chan *Frame, 1)}
-	conn.mu.Lock()
-	if conn.closed {
-		conn.mu.Unlock()
+func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
+
+	if conn.IsClosed() {
 		return 0, nil, nil, ErrConnAlreadyClosed
 	}
-	if conn.rwc == nil {
-		conn.mu.Unlock()
-		return 0, nil, nil, ErrConnNotConnected
-	}
-	i := 0
-	for {
-		_, ok := conn.respes[requestID]
-		if !ok {
-			suc = true
-			break
-		}
 
-		i++
-		if i >= 3 {
-			break
-		}
-		requestID = PoorManUUID(true)
-	}
-
-	if !suc {
-		conn.mu.Unlock()
-		return 0, nil, nil, ErrNoNewUUID
-	}
-
-	conn.respes[requestID] = resp
-	conn.mu.Unlock()
+	resp := &response{Frame: make(chan *Frame, 1)}
+	requestID := conn.nextRequestID()
 
 	writer := newFrameWriter(conn)
+	writer.resp = resp
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
 
 	if err != nil {
-		conn.mu.Lock()
-		resp, ok := conn.respes[requestID]
-		if ok {
-			resp.Close()
-			delete(conn.respes, requestID)
-		}
-		conn.mu.Unlock()
 		return 0, nil, nil, err
 	}
 
@@ -340,41 +314,26 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 }
 
 func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
+
 	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	loopCtx := conn.atomicLoopCtx()
 	select {
 	case conn.writeFrameCh <- wfr:
-	case <-conn.loopCtx.Done():
-		return conn.loopCtx.Err()
+	case <-loopCtx.Done():
+		return loopCtx.Err()
 	}
 
 	select {
 	case err := <-wfr.result:
 		return err
-	case <-conn.loopCtx.Done():
-		return conn.loopCtx.Err()
+	case <-loopCtx.Done():
+		return loopCtx.Err()
 	}
 }
 
 // ResetFrame resets a stream by requestID
 func (conn *Connection) ResetFrame(requestID uint64, reason Cmd) error {
 	return conn.getWriter().ResetFrame(requestID, reason)
-}
-
-// PoorManUUID generate a uint64 uuid
-func PoorManUUID(client bool) (result uint64) {
-	buf := make([]byte, 8)
-	rand.Read(buf)
-	result = binary.LittleEndian.Uint64(buf)
-	if result == 0 {
-		result = math.MaxUint64
-	}
-
-	if client {
-		result |= 1 //odd for client
-	} else {
-		result &= math.MaxUint64 - 1 //even for server
-	}
-	return
 }
 
 // close current rwc
@@ -387,30 +346,28 @@ func (conn *Connection) closeRWC() {
 	}
 	conn.rwc.Close()
 	conn.rwc = nil // so that connect will Dial another rwc
+}
+
+// endLoop is called after read/write g finishes, so no need for lock
+func (conn *Connection) endLoop() {
 
 	for _, v := range conn.respes {
 		v.Close()
 	}
 	conn.respes = make(map[uint64]*response)
-
-}
-
-func (conn *Connection) freeStreams() {
 	conn.cs.Release()
 	conn.cs = &ConnStreams{}
+
 }
 
 // Close closes the qrpc connection
 func (conn *Connection) Close() error {
 
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
+	swapped := atomic.CompareAndSwapUint32(&conn.closed, 0, 1)
 
-	if conn.closed {
+	if !swapped {
 		return ErrConnAlreadyClosed
 	}
-
-	conn.closed = true
 
 	conn.cancelCtx()
 
@@ -424,12 +381,8 @@ func (conn *Connection) Done() <-chan struct{} {
 
 // IsClosed tells whether connection is closed
 func (conn *Connection) IsClosed() bool {
-	conn.mu.Lock()
-	defer conn.mu.Unlock()
-	return conn.closed
+	return atomic.LoadUint32(&conn.closed) == 1
 }
-
-var requestID uint64
 
 func (conn *Connection) readFrames() {
 
@@ -439,7 +392,7 @@ func (conn *Connection) readFrames() {
 	if conn.rwc == nil {
 		return
 	}
-	reader := newFrameReader(conn.loopCtx, conn.rwc, conn.conf.ReadTimeout)
+	reader := newFrameReader(*conn.loopCtx, conn.rwc, conn.conf.ReadTimeout)
 	defer reader.Finalize()
 
 	for {
@@ -572,7 +525,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 				break
 			}
 		} else if !flags.IsPush() { // skip stream logic if PushFlag set
-			s, loaded := conn.cs.CreateOrGetStream(conn.loopCtx, requestID, flags)
+			s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
 			if !loaded {
 				LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
 			}
@@ -585,11 +538,11 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 		conn.cachedRequests = append(conn.cachedRequests, res)
 		conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
-	case <-conn.loopCtx.Done():
+	case <-(*conn.loopCtx).Done():
 		for _, request := range conn.cachedRequests {
-			request.result <- conn.loopCtx.Err()
+			request.result <- (*conn.loopCtx).Err()
 		}
-		return conn.loopCtx.Err()
+		return (*conn.loopCtx).Err()
 	}
 
 	batch--
@@ -616,7 +569,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 					break
 				}
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, loaded := conn.cs.CreateOrGetStream(conn.loopCtx, requestID, flags)
+				s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
 				if !loaded {
 					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
 				}
@@ -629,11 +582,11 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 			conn.cachedRequests = append(conn.cachedRequests, res)
 			conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
-		case <-conn.loopCtx.Done():
+		case <-(*conn.loopCtx).Done():
 			for _, request := range conn.cachedRequests {
-				request.result <- conn.loopCtx.Err()
+				request.result <- (*conn.loopCtx).Err()
 			}
-			return conn.loopCtx.Err()
+			return (*conn.loopCtx).Err()
 		default:
 			return nil
 		}
@@ -648,6 +601,23 @@ func (conn *Connection) writeBuffers() error {
 		return nil
 	}
 
+	// must prepare respes before actually write
+	conn.mu.Lock()
+	for idx, request := range conn.cachedRequests {
+		if request.dfw.resp != nil {
+			requestID := request.dfw.RequestID()
+			if conn.respes[requestID] != nil {
+				request.result <- ErrNoNewUUID
+				request.result = nil
+				conn.cachedBuffs[idx] = nil
+				continue
+			}
+			conn.respes[requestID] = request.dfw.resp
+			request.dfw.resp = nil
+		}
+	}
+	conn.mu.Unlock()
+
 	// LogInfo("conn buff size", len(conn.cachedRequests))
 	_, err := conn.loopBytesWriter.writeBuffers(&conn.cachedBuffs)
 	if err != nil {
@@ -660,13 +630,17 @@ func (conn *Connection) writeBuffers() error {
 			if len(conn.cachedBuffs[idx]) != 0 {
 				request.result <- err
 			} else {
-				request.result <- nil
+				if request.result != nil {
+					request.result <- nil
+				}
 			}
 		}
 		return err
 	}
 	for _, request := range conn.cachedRequests {
-		request.result <- nil
+		if request.result != nil {
+			request.result <- nil
+		}
 	}
 
 	return nil
