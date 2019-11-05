@@ -539,6 +539,48 @@ func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) err
 		requestID uint64
 	)
 
+	if batch == 1 {
+		select {
+		case res = <-sc.writeFrameCh:
+			dfw = res.dfw
+			flags = dfw.Flags()
+			requestID = dfw.RequestID()
+
+			if flags.IsRst() {
+				s := sc.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrRstNonExistingStream
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
+				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+				if !loaded {
+					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+				}
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			sc.cachedRequests = append(sc.cachedRequests, res)
+			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
+
+		case <-sc.ctx.Done():
+			for _, request := range sc.cachedRequests {
+				request.result <- sc.ctx.Err()
+			}
+			return sc.ctx.Err()
+		}
+
+		return nil
+	}
+
 	timeout := time.Microsecond * 100
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
