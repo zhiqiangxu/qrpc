@@ -468,17 +468,26 @@ func (sc *serveconn) writeBuffers() error {
 		return nil
 	}
 
-	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 	// must prepare respes before actually write
-	ci.l.Lock()
-	if ci.closed {
-		for _, request := range sc.cachedRequests {
-			request.result <- ErrConnAlreadyClosed
-		}
-		ci.l.Unlock()
-	}
+
+	var targetIdx []int
 	for idx, request := range sc.cachedRequests {
 		if request.dfw.resp != nil {
+			targetIdx = append(targetIdx, idx)
+		}
+	}
+	if len(targetIdx) > 0 {
+		ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+		ci.l.Lock()
+		if ci.closed {
+			for _, request := range sc.cachedRequests {
+				request.result <- ErrConnAlreadyClosed
+			}
+			ci.l.Unlock()
+			return ErrConnAlreadyClosed
+		}
+		for _, idx := range targetIdx {
+			request := sc.cachedRequests[idx]
 			requestID := request.dfw.RequestID()
 			if ci.respes[requestID] != nil {
 				request.result <- ErrNoNewUUID
@@ -489,8 +498,9 @@ func (sc *serveconn) writeBuffers() error {
 			ci.respes[requestID] = request.dfw.resp
 			request.dfw.resp = nil
 		}
+		ci.l.Unlock()
 	}
-	ci.l.Unlock()
+
 	// LogInfo("sc buff size", len(sc.cachedRequests))
 
 	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
