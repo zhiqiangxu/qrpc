@@ -572,9 +572,7 @@ func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) err
 			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
 
 		case <-sc.ctx.Done():
-			for _, request := range sc.cachedRequests {
-				request.result <- sc.ctx.Err()
-			}
+			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
 			return sc.ctx.Err()
 		}
 
@@ -622,9 +620,7 @@ func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) err
 			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
 
 		case <-sc.ctx.Done():
-			for _, request := range sc.cachedRequests {
-				request.result <- sc.ctx.Err()
-			}
+			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
 			return sc.ctx.Err()
 		case <-timer.C:
 			if !canQuit {

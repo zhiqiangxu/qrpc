@@ -540,9 +540,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 		conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
 	case <-(*conn.loopCtx).Done():
-		for _, request := range conn.cachedRequests {
-			request.result <- (*conn.loopCtx).Err()
-		}
+		// no need to deal with sc.cachedRequests since they will fall into the same case anyway
 		return (*conn.loopCtx).Err()
 	}
 
@@ -584,9 +582,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 			conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
 		case <-(*conn.loopCtx).Done():
-			for _, request := range conn.cachedRequests {
-				request.result <- (*conn.loopCtx).Err()
-			}
+			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
 			return (*conn.loopCtx).Err()
 		default:
 			return nil
