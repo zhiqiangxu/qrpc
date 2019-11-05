@@ -480,10 +480,10 @@ func (sc *serveconn) writeBuffers() error {
 		ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 		ci.l.Lock()
 		if ci.closed {
+			ci.l.Unlock()
 			for _, request := range sc.cachedRequests {
 				request.result <- ErrConnAlreadyClosed
 			}
-			ci.l.Unlock()
 			return ErrConnAlreadyClosed
 		}
 		for _, idx := range targetIdx {

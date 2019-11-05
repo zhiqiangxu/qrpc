@@ -346,14 +346,15 @@ func (conn *Connection) closeRWC() {
 	}
 	conn.rwc.Close()
 	conn.rwc = nil // so that connect will Dial another rwc
+
+	for _, v := range conn.respes {
+		v.Close()
+	}
 }
 
 // endLoop is called after read/write g finishes, so no need for lock
 func (conn *Connection) endLoop() {
 
-	for _, v := range conn.respes {
-		v.Close()
-	}
 	conn.respes = make(map[uint64]*response)
 	conn.cs.Release()
 	conn.cs = &ConnStreams{}
@@ -603,6 +604,13 @@ func (conn *Connection) writeBuffers() error {
 
 	// must prepare respes before actually write
 	conn.mu.Lock()
+	if conn.rwc == nil {
+		conn.mu.Unlock()
+		for _, request := range conn.cachedRequests {
+			request.result <- ErrConnAlreadyClosed
+		}
+		return ErrConnAlreadyClosed
+	}
 	for idx, request := range conn.cachedRequests {
 		if request.dfw.resp != nil {
 			requestID := request.dfw.RequestID()
