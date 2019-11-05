@@ -350,12 +350,12 @@ func (conn *Connection) closeRWC() {
 	for _, v := range conn.respes {
 		v.Close()
 	}
+	conn.respes = make(map[uint64]*response)
 }
 
 // endLoop is called after read/write g finishes, so no need for lock
 func (conn *Connection) endLoop() {
 
-	conn.respes = make(map[uint64]*response)
 	conn.cs.Release()
 	conn.cs = &ConnStreams{}
 
