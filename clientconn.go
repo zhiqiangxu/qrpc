@@ -508,6 +508,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 	// called from dedicated wg
 	// wait for first request
 
+firstFrame:
 	select {
 	case res = <-conn.writeFrameCh:
 		dfw = res.dfw
@@ -518,12 +519,12 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 			s := conn.cs.GetStream(requestID, flags)
 			if s == nil {
 				res.result <- ErrRstNonExistingStream
-				break
+				goto firstFrame
 			}
 			// for rst frame, AddOutFrame returns false when no need to send the frame
 			if !s.AddOutFrame(requestID, flags) {
 				res.result <- nil
-				break
+				goto firstFrame
 			}
 		} else if !flags.IsPush() { // skip stream logic if PushFlag set
 			s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
@@ -532,7 +533,7 @@ func (conn *Connection) collectWriteFrames(batch int) error {
 			}
 			if !s.AddOutFrame(requestID, flags) {
 				res.result <- ErrWriteAfterCloseSelf
-				break
+				goto firstFrame
 			}
 		}
 
