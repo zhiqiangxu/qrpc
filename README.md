@@ -31,7 +31,7 @@
 
 而所有关于是否阻塞、是否流式、是否主动推送的元信息，都包含在头部`1`字节的`flag`之中！
 
-具体字段参考[`frame.md`](https://github.com/zhiqiangxu/qrpc-demo/blob/master/doc/frame.md)。
+具体字段参考[`frame.md`](https://github.com/zhiqiangxu/qrpc/blob/master/doc/frame.md)。
 
 ------
 
