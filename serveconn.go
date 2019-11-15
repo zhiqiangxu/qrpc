@@ -383,7 +383,7 @@ func (sc *serveconn) readFrames() (err error) {
 
 }
 
-func (sc *serveconn) getCodec() Codec {
+func (sc *serveconn) getCodec() CompressorCodec {
 	return sc.server.bindings[sc.idx].Codec
 }
 
