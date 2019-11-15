@@ -17,6 +17,8 @@ const (
 	NBFlag
 	// PushFlag mean the frame is pushed from server
 	PushFlag
+	// CodecFlag for codec
+	CodecFlag
 )
 
 // ToNonStream convert flg to nonstreamed flag
@@ -58,9 +60,14 @@ func (flg FrameFlag) IsDone() bool {
 	return !flg.IsStream() || flg&StreamEndFlag != 0 || flg&StreamRstFlag != 0
 }
 
-// IsPush returns if frame is pushed
+// IsPush checks whether frame is pushed
 func (flg FrameFlag) IsPush() bool {
 	return flg&PushFlag != 0
+}
+
+// IsCodec checks whether frame needs codec
+func (flg FrameFlag) IsCodec() bool {
+	return flg&CodecFlag != 0
 }
 
 // contextKey is a value for use with context.WithValue. It's used as

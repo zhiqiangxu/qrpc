@@ -7,6 +7,12 @@ import (
 	"github.com/go-kit/kit/metrics"
 )
 
+// Codec for encode/decode
+type Codec interface {
+	Encode([]byte) ([]byte, error)
+	Decode([]byte) ([]byte, error)
+}
+
 // ServerBinding contains binding infos
 type ServerBinding struct {
 	Addr                string
@@ -18,6 +24,7 @@ type ServerBinding struct {
 	MaxFrameSize        int
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)
+	Codec               Codec
 	OverlayNetwork      func(net.Listener) Listener
 	OnKickCB            func(w FrameWriter)
 	LatencyMetric       metrics.Histogram
@@ -36,4 +43,5 @@ type ConnectionConfig struct {
 	WriteFrameChSize int
 	Handler          Handler
 	OverlayNetwork   func(address string, timeout time.Duration) (net.Conn, error)
+	Codec            Codec
 }

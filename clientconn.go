@@ -313,6 +313,10 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	return requestID, resp, writer, nil
 }
 
+func (conn *Connection) getCodec() Codec {
+	return conn.conf.Codec
+}
+
 func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 
 	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
@@ -393,7 +397,7 @@ func (conn *Connection) readFrames() {
 	if conn.rwc == nil {
 		return
 	}
-	reader := newFrameReader(*conn.loopCtx, conn.rwc, conn.conf.ReadTimeout)
+	reader := newFrameReader(*conn.loopCtx, conn.rwc, conn.conf.ReadTimeout, conn.conf.Codec)
 	defer reader.Finalize()
 
 	for {

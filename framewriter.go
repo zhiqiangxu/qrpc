@@ -2,10 +2,12 @@ package qrpc
 
 import (
 	"encoding/binary"
+	"errors"
 )
 
 // frameBytesWriter for writing frame bytes
 type frameBytesWriter interface {
+	getCodec() Codec
 	// writeFrameBytes write the frame bytes atomically or error
 	writeFrameBytes(dfw *defaultFrameWriter) error
 }
@@ -79,8 +81,28 @@ func (dfw *defaultFrameWriter) Payload() []byte {
 	return dfw.wbuf[16:]
 }
 
+var (
+	// ErrNoCodec when no codec available
+	ErrNoCodec = errors.New("no codec available")
+)
+
 // EndWrite finishes write frame
 func (dfw *defaultFrameWriter) EndWrite() (err error) {
+
+	if dfw.Flags().IsCodec() {
+		codec := dfw.fbw.getCodec()
+		if codec == nil {
+			err = ErrNoCodec
+			return
+		}
+		var encodedPayload []byte
+		encodedPayload, err = codec.Encode(dfw.Payload())
+		if err != nil {
+			return
+		}
+		dfw.wbuf = dfw.wbuf[:16]
+		dfw.WriteBytes(encodedPayload)
+	}
 
 	length := len(dfw.wbuf) - 4
 	_ = append(dfw.wbuf[:0],
