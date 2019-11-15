@@ -8,6 +8,7 @@ import (
 )
 
 // Codec for encode/decode
+// **Important**: should try to do it in place if possible
 type Codec interface {
 	Encode([]byte) ([]byte, error)
 	Decode([]byte) ([]byte, error)
