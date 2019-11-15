@@ -22,15 +22,15 @@ type defaultFrameReader struct {
 	rbuf         [16]byte // for header
 	ctx          context.Context
 	maxFrameSize int
-	codec        Codec
+	codec        CompressorCodec
 }
 
 // newFrameReader creates a FrameWriter instance to read frames
-func newFrameReader(ctx context.Context, rwc net.Conn, timeout int, codec Codec) *defaultFrameReader {
+func newFrameReader(ctx context.Context, rwc net.Conn, timeout int, codec CompressorCodec) *defaultFrameReader {
 	return newFrameReaderWithMFS(ctx, rwc, timeout, codec, 0)
 }
 
-func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int, codec Codec, maxFrameSize int) *defaultFrameReader {
+func newFrameReaderWithMFS(ctx context.Context, rwc net.Conn, timeout int, codec CompressorCodec, maxFrameSize int) *defaultFrameReader {
 	return &defaultFrameReader{Reader: NewReaderWithTimeout(ctx, rwc, timeout), ctx: ctx, codec: codec, maxFrameSize: maxFrameSize}
 }
 

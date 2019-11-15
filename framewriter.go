@@ -7,7 +7,7 @@ import (
 
 // frameBytesWriter for writing frame bytes
 type frameBytesWriter interface {
-	getCodec() Codec
+	getCodec() CompressorCodec
 	// writeFrameBytes write the frame bytes atomically or error
 	writeFrameBytes(dfw *defaultFrameWriter) error
 }
@@ -89,6 +89,11 @@ var (
 // EndWrite finishes write frame
 func (dfw *defaultFrameWriter) EndWrite() (err error) {
 
+	payloadLength := len(dfw.Payload())
+	if payloadLength == 0 {
+		dfw.SetFlags(dfw.Flags().ToNonCodec())
+	}
+
 	if dfw.Flags().IsCodec() {
 		codec := dfw.fbw.getCodec()
 		if codec == nil {
@@ -100,8 +105,12 @@ func (dfw *defaultFrameWriter) EndWrite() (err error) {
 		if err != nil {
 			return
 		}
-		dfw.wbuf = dfw.wbuf[:16]
-		dfw.WriteBytes(encodedPayload)
+		if len(encodedPayload) > payloadLength {
+			dfw.SetFlags(dfw.Flags().ToNonCodec())
+		} else {
+			dfw.wbuf = dfw.wbuf[:16]
+			dfw.WriteBytes(encodedPayload)
+		}
 	}
 
 	length := len(dfw.wbuf) - 4

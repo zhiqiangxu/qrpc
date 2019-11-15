@@ -313,7 +313,7 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 	return requestID, resp, writer, nil
 }
 
-func (conn *Connection) getCodec() Codec {
+func (conn *Connection) getCodec() CompressorCodec {
 	return conn.conf.Codec
 }
 
