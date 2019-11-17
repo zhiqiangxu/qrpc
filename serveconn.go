@@ -438,7 +438,7 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		sc.cachedBuffs = sc.cachedBuffs[:0]
 		sc.cachedRequests = sc.cachedRequests[:0]
 
-		err = sc.collectWriteFrames(binding.WriteFrameChSize, wfr.result)
+		err = sc.collectWriteFrames(binding.WriteFrameChSize)
 		if err != nil {
 			LogDebug(unsafe.Pointer(sc), "sc.collectWriteFrames", err)
 			return
@@ -531,7 +531,7 @@ func (sc *serveconn) writeBuffers() error {
 	return nil
 }
 
-func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) error {
+func (sc *serveconn) collectWriteFrames(batch int) error {
 	var (
 		res       writeFrameRequest
 		dfw       *defaultFrameWriter
@@ -539,57 +539,9 @@ func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) err
 		requestID uint64
 	)
 
-	if batch == 1 {
-		select {
-		case res = <-sc.writeFrameCh:
-			dfw = res.dfw
-			flags = dfw.Flags()
-			requestID = dfw.RequestID()
-
-			if flags.IsRst() {
-				s := sc.cs.GetStream(requestID, flags)
-				if s == nil {
-					res.result <- ErrRstNonExistingStream
-					break
-				}
-				// for rst frame, AddOutFrame returns false when no need to send the frame
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- nil
-					break
-				}
-			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
-				if !loaded {
-					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
-				}
-				if !s.AddOutFrame(requestID, flags) {
-					res.result <- ErrWriteAfterCloseSelf
-					break
-				}
-			}
-
-			sc.cachedRequests = append(sc.cachedRequests, res)
-			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
-
-		case <-sc.ctx.Done():
-			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
-			return sc.ctx.Err()
-		}
-
-		return nil
-	}
-
-	timeout := time.Microsecond * 100
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-
-	var canQuit bool
 	for i := 0; i < batch; i++ {
 		select {
 		case res = <-sc.writeFrameCh:
-			if res.result == currentResult {
-				canQuit = true
-			}
 			dfw = res.dfw
 			flags = dfw.Flags()
 			requestID = dfw.RequestID()
@@ -622,13 +574,7 @@ func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) err
 		case <-sc.ctx.Done():
 			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
 			return sc.ctx.Err()
-		case <-timer.C:
-			if !canQuit {
-				timer.Stop()
-				timer = time.NewTimer(timeout)
-				batch++
-				continue
-			}
+		default:
 			return nil
 		}
 	}
