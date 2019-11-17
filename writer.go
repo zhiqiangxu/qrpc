@@ -81,3 +81,56 @@ func (w *Writer) Write(bytes []byte) (int, error) {
 	}
 
 }
+
+func (w *Writer) writeBuffers(buffs *net.Buffers) (int64, error) {
+	var (
+		endTime      time.Time
+		writeTimeout time.Duration
+		offset       int64
+		n            int64
+		err          error
+	)
+
+	timeout := w.timeout
+	if timeout > 0 {
+		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
+	}
+	var size int64
+	for _, bytes := range *buffs {
+		size += int64(len(bytes))
+	}
+
+	for {
+		if timeout > 0 {
+			writeTimeout = endTime.Sub(time.Now())
+			if writeTimeout > CtxCheckMaxInterval {
+				writeTimeout = CtxCheckMaxInterval
+			}
+		} else {
+			writeTimeout = CtxCheckMaxInterval
+		}
+
+		w.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+
+		n, err = buffs.WriteTo(w.conn)
+		offset += n
+		if err != nil {
+			if opError, ok := err.(*net.OpError); ok && opError.Timeout() {
+				if timeout > 0 && time.Now().After(endTime) {
+					return offset, err
+				}
+			} else {
+				return offset, err
+			}
+		}
+		if offset >= size {
+			return offset, nil
+		}
+
+		select {
+		case <-w.ctx.Done():
+			return offset, w.ctx.Err()
+		default:
+		}
+	}
+}

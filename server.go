@@ -31,6 +31,14 @@ type FrameWriter interface {
 	ResetFrame(requestID uint64, reason Cmd) error
 }
 
+// StreamWriter is returned by StreamRequest
+type StreamWriter interface {
+	RequestID() uint64
+	StartWrite(cmd Cmd)
+	WriteBytes(v []byte)     // v is copied in WriteBytes
+	EndWrite(end bool) error // block until scheduled
+}
+
 // A Handler responds to an qrpc request.
 type Handler interface {
 	ServeQRPC(FrameWriter, *RequestFrame)
@@ -131,6 +139,10 @@ func NewServer(bindings []ServerBinding) *Server {
 	for idx, binding := range bindings {
 		if binding.MaxCloseRate != 0 {
 			closeRateLimiter[idx] = ratelimit.New(binding.MaxCloseRate)
+		}
+		if binding.WriteFrameChSize < 1 {
+			// at least 1 for WriteFrameChSize
+			bindings[idx].WriteFrameChSize = 1
 		}
 	}
 	return &Server{
@@ -326,19 +338,23 @@ func (srv *Server) trackListener(ln net.Listener, add bool) {
 // Create new connection from rwc.
 func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) (sc *serveconn) {
 	sc = &serveconn{
-		server:       srv,
-		rwc:          rwc,
-		idx:          idx,
-		untrackedCh:  make(chan struct{}),
-		cs:           &ConnStreams{},
-		readFrameCh:  make(chan readFrameResult, srv.bindings[idx].ReadFrameChSize),
-		writeFrameCh: make(chan writeFrameRequest)}
+		server:         srv,
+		rwc:            rwc,
+		idx:            idx,
+		untrackedCh:    make(chan struct{}),
+		cs:             &ConnStreams{},
+		readFrameCh:    make(chan readFrameResult, srv.bindings[idx].ReadFrameChSize),
+		writeFrameCh:   make(chan writeFrameRequest, srv.bindings[idx].WriteFrameChSize),
+		cachedRequests: make([]writeFrameRequest, 0, srv.bindings[idx].WriteFrameChSize),
+		cachedBuffs:    make(net.Buffers, 0, srv.bindings[idx].WriteFrameChSize),
+		wlockCh:        make(chan struct{}, 1)}
 
 	ctx, cancelCtx := context.WithCancel(ctx)
 	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
 
 	sc.cancelCtx = cancelCtx
 	sc.ctx = ctx
+	sc.bytesWriter = NewWriterWithTimeout(ctx, rwc, srv.bindings[idx].DefaultWriteTimeout)
 
 	srv.activeConn[idx].Store(sc, struct{}{})
 

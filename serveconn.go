@@ -40,11 +40,16 @@ type serveconn struct {
 	// to CloseNotifier callers. It is usually of type *net.TCPConn
 	rwc net.Conn
 
-	reader       *defaultFrameReader    // used in conn.readFrames
-	writer       FrameWriter            // used by handlers
-	readFrameCh  chan readFrameResult   // written by conn.readFrames
-	writeFrameCh chan writeFrameRequest // written by FrameWriter
-	rwDone       uint32
+	reader         *defaultFrameReader // used in conn.readFrames
+	writer         FrameWriter         // used by handlers
+	bytesWriter    *Writer
+	readFrameCh    chan readFrameResult   // written by conn.readFrames
+	writeFrameCh   chan writeFrameRequest // written by FrameWriter
+	inflight       int32
+	ridGen         uint64
+	wlockCh        chan struct{}
+	cachedRequests []writeFrameRequest
+	cachedBuffs    net.Buffers
 
 	// modified by Server
 	untrack     uint32 // ony the first call to untrack actually do it, subsequent calls should wait for untrackedCh
@@ -146,13 +151,11 @@ func (sc *serveconn) serve() {
 	}
 	ctx := sc.ctx
 	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, maxFrameSize)
-	sc.writer = newFrameWriter(ctx, sc.writeFrameCh) // only used by blocking mode
+	sc.writer = newFrameWriter(sc) // only used by blocking mode
 
+	sc.inflight = 1
 	GoFunc(&sc.wg, func() {
 		sc.readFrames()
-	})
-	GoFunc(&sc.wg, func() {
-		sc.writeFrames(binding.DefaultWriteTimeout)
 	})
 
 	handler := binding.Handler
@@ -255,7 +258,7 @@ func (sc *serveconn) GetID() string {
 // GetWriter generate a FrameWriter for the connection
 func (sc *serveconn) GetWriter() FrameWriter {
 
-	return newFrameWriter(sc.ctx, sc.writeFrameCh)
+	return newFrameWriter(sc)
 }
 
 var (
@@ -380,30 +383,168 @@ func (sc *serveconn) readFrames() (err error) {
 
 }
 
-func (sc *serveconn) writeFrames(timeout int) (err error) {
+func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
+	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	select {
+	case sc.writeFrameCh <- wfr:
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
+	}
 
-	defer func() {
-		sc.tryFreeStreams()
+	select {
+	case sc.wlockCh <- struct{}{}:
+		// only one allowed at a time
+
+		if len(wfr.result) > 0 {
+			// already handled, release lock
+			<-sc.wlockCh
+			return <-wfr.result
+		}
+
+		// check for reader quit, don't release wlock if reader quit
+		if !sc.addAndCheckInflight() {
+
+			select {
+			case <-sc.ctx.Done():
+				return sc.ctx.Err()
+			default:
+				// read has quit, ctx must have been canceled
+				panic("bug in qrpc inflight")
+			}
+		}
 
 		binding := sc.server.bindings[sc.idx]
-		if binding.CounterMetric != nil {
-			errStr := fmt.Sprintf("%v", err)
-			if err != nil && binding.OverlayNetwork != nil {
-				errStr = errStrWriteFramesForOverlayNetwork
-			}
-			countlvs := []string{"method", "writeFrames", "error", errStr}
-			binding.CounterMetric.With(countlvs...).Add(1)
-		}
-	}()
+		var releaseWlock bool
+		defer func() {
 
-	ctx := sc.ctx
-	writer := NewWriterWithTimeout(ctx, sc.rwc, timeout)
-	for {
+			sc.tryFreeStreams()
+
+			if err != nil {
+				if binding.CounterMetric != nil {
+					errStr := fmt.Sprintf("%v", err)
+					if binding.OverlayNetwork != nil {
+						errStr = errStrWriteFramesForOverlayNetwork
+					}
+					countlvs := []string{"method", "writeFrames", "error", errStr}
+					binding.CounterMetric.With(countlvs...).Add(1)
+				}
+			}
+
+			if releaseWlock {
+				<-sc.wlockCh
+			}
+		}()
+
+		sc.cachedBuffs = sc.cachedBuffs[:0]
+		sc.cachedRequests = sc.cachedRequests[:0]
+
+		err = sc.collectWriteFrames(binding.WriteFrameChSize, wfr.result)
+		if err != nil {
+			LogDebug(unsafe.Pointer(sc), "sc.collectWriteFrames", err)
+			return
+		}
+
+		err = sc.writeBuffers()
+		if err != nil {
+			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
+		} else {
+			// all write requests handled
+			releaseWlock = true
+		}
+
+		return <-wfr.result
+
+	case err := <-wfr.result:
+		return err
+	case <-sc.ctx.Done():
+		return sc.ctx.Err()
+	}
+
+}
+
+func (sc *serveconn) writeBuffers() error {
+	if len(sc.cachedRequests) == 0 {
+		// nothing to do
+		return nil
+	}
+
+	// must prepare respes before actually write
+
+	var targetIdx []int
+	for idx, request := range sc.cachedRequests {
+		if request.dfw.resp != nil {
+			targetIdx = append(targetIdx, idx)
+		}
+	}
+	if len(targetIdx) > 0 {
+		ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+		ci.l.Lock()
+		if ci.closed {
+			ci.l.Unlock()
+			for _, request := range sc.cachedRequests {
+				request.result <- ErrConnAlreadyClosed
+			}
+			return ErrConnAlreadyClosed
+		}
+		for _, idx := range targetIdx {
+			request := sc.cachedRequests[idx]
+			requestID := request.dfw.RequestID()
+			if ci.respes[requestID] != nil {
+				request.result <- ErrNoNewUUID
+				request.result = nil
+				sc.cachedBuffs[idx] = nil
+				continue
+			}
+			ci.respes[requestID] = request.dfw.resp
+			request.dfw.resp = nil
+		}
+		ci.l.Unlock()
+	}
+
+	// LogInfo("sc buff size", len(sc.cachedRequests))
+
+	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+	if err != nil {
+		LogDebug(unsafe.Pointer(sc), "serveconn.writeBuffers", err)
+		sc.Close()
+
+		if opErr, ok := err.(*net.OpError); ok {
+			err = opErr.Err
+		}
+		for idx, request := range sc.cachedRequests {
+			if len(sc.cachedBuffs[idx]) != 0 {
+				request.result <- err
+			} else {
+				if request.result != nil {
+					request.result <- nil
+				}
+			}
+		}
+		return err
+	}
+	for _, request := range sc.cachedRequests {
+		if request.result != nil {
+			request.result <- nil
+		}
+	}
+
+	return nil
+}
+
+func (sc *serveconn) collectWriteFrames(batch int, currentResult chan error) error {
+	var (
+		res       writeFrameRequest
+		dfw       *defaultFrameWriter
+		flags     FrameFlag
+		requestID uint64
+	)
+
+	if batch == 1 {
 		select {
-		case res := <-sc.writeFrameCh:
-			dfw := res.dfw
-			flags := dfw.Flags()
-			requestID := dfw.RequestID()
+		case res = <-sc.writeFrameCh:
+			dfw = res.dfw
+			flags = dfw.Flags()
+			requestID = dfw.RequestID()
 
 			if flags.IsRst() {
 				s := sc.cs.GetStream(requestID, flags)
@@ -419,7 +560,7 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
 				if !loaded {
-					LogDebug(unsafe.Pointer(sc.cs), "serveconn new stream", requestID, flags, dfw.Cmd())
+					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
@@ -427,27 +568,84 @@ func (sc *serveconn) writeFrames(timeout int) (err error) {
 				}
 			}
 
-			_, err = writer.Write(dfw.GetWbuf())
-			if err != nil {
-				LogDebug(unsafe.Pointer(sc), "serveconn Write", err)
-				sc.Close()
-				res.result <- err
+			sc.cachedRequests = append(sc.cachedRequests, res)
+			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
 
-				if opErr, ok := err.(*net.OpError); ok {
-					return opErr.Err
-				}
-				return
+		case <-sc.ctx.Done():
+			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
+			return sc.ctx.Err()
+		}
+
+		return nil
+	}
+
+	timeout := time.Microsecond * 100
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	var canQuit bool
+	for i := 0; i < batch; i++ {
+		select {
+		case res = <-sc.writeFrameCh:
+			if res.result == currentResult {
+				canQuit = true
 			}
-			res.result <- nil
-		case <-ctx.Done():
-			return ctx.Err()
+			dfw = res.dfw
+			flags = dfw.Flags()
+			requestID = dfw.RequestID()
+
+			if flags.IsRst() {
+				s := sc.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrRstNonExistingStream
+					break
+				}
+				// for rst frame, AddOutFrame returns false when no need to send the frame
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- nil
+					break
+				}
+			} else if !flags.IsPush() { // skip stream logic if PushFlag set
+				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+				if !loaded {
+					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+				}
+				if !s.AddOutFrame(requestID, flags) {
+					res.result <- ErrWriteAfterCloseSelf
+					break
+				}
+			}
+
+			sc.cachedRequests = append(sc.cachedRequests, res)
+			sc.cachedBuffs = append(sc.cachedBuffs, dfw.GetWbuf())
+
+		case <-sc.ctx.Done():
+			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
+			return sc.ctx.Err()
+		case <-timer.C:
+			if !canQuit {
+				timer.Stop()
+				timer = time.NewTimer(timeout)
+				batch++
+				continue
+			}
+			return nil
 		}
 	}
+	return nil
+}
+
+func (sc *serveconn) addAndCheckInflight() bool {
+	if atomic.AddInt32(&sc.inflight, 1) == 1 {
+		atomic.AddInt32(&sc.inflight, -1)
+		return false
+	}
+	return true
 }
 
 func (sc *serveconn) tryFreeStreams() {
-	count := atomic.AddUint32(&sc.rwDone, 1)
-	if count == 2 {
+
+	if atomic.AddInt32(&sc.inflight, -1) == 0 {
 		sc.cs.Release()
 	}
 }
@@ -460,58 +658,27 @@ func (sc *serveconn) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint64, 
 	return requestID, resp, err
 }
 
+func (sc *serveconn) nextRequestID() uint64 {
+	ridGen := atomic.AddUint64(&sc.ridGen, 1)
+	return 2 * ridGen
+}
+
 func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
-	var (
-		requestID uint64
-		suc       bool
-	)
 
 	if atomic.LoadUint32(&sc.untrack) != 0 {
 		return 0, nil, nil, ErrConnAlreadyClosed
 	}
 
-	requestID = PoorManUUID(false)
-	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.l.Lock()
-	if ci.respes == nil {
-		ci.respes = make(map[uint64]*response)
-	}
-	i := 0
-	for {
-		_, ok := ci.respes[requestID]
-		if !ok {
-			suc = true
-			break
-		}
-
-		i++
-		if i >= 3 {
-			break
-		}
-		requestID = PoorManUUID(false)
-	}
-
-	if !suc {
-		ci.l.Unlock()
-		return 0, nil, nil, ErrNoNewUUID
-	}
+	requestID := sc.nextRequestID()
 	resp := &response{Frame: make(chan *Frame, 1)}
-	ci.respes[requestID] = resp
-	ci.l.Unlock()
 
-	writer := newFrameWriter(sc.ctx, sc.writeFrameCh)
+	writer := newFrameWriter(sc)
+	writer.resp = resp
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
 
 	if err != nil {
-		ci.l.Lock()
-		resp, ok := ci.respes[requestID]
-		if ok {
-			resp.Close()
-			delete(ci.respes, requestID)
-		}
-		ci.l.Unlock()
 		return 0, nil, nil, err
 	}
 
@@ -546,8 +713,13 @@ func (sc *serveconn) closeUntracked() error {
 	ci.closed = true
 	closeNotify := ci.closeNotify
 	ci.closeNotify = nil
+	respes := ci.respes
+	ci.respes = nil
 	ci.l.Unlock()
 
+	for _, v := range respes {
+		v.Close()
+	}
 	for _, f := range closeNotify {
 		f()
 	}

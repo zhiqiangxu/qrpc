@@ -14,6 +14,7 @@ type ServerBinding struct {
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
 	ReadFrameChSize     int
+	WriteFrameChSize    int
 	MaxFrameSize        int
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)
@@ -29,9 +30,10 @@ type SubFunc func(*Connection, *Frame)
 
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {
-	WriteTimeout   int
-	ReadTimeout    int
-	DialTimeout    time.Duration
-	Handler        Handler
-	OverlayNetwork func(address string, timeout time.Duration) (net.Conn, error)
+	WriteTimeout     int
+	ReadTimeout      int
+	DialTimeout      time.Duration
+	WriteFrameChSize int
+	Handler          Handler
+	OverlayNetwork   func(address string, timeout time.Duration) (net.Conn, error)
 }

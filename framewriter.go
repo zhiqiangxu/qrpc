@@ -1,31 +1,31 @@
 package qrpc
 
 import (
-	"context"
+	"encoding/binary"
 )
+
+// frameBytesWriter for writing frame bytes
+type frameBytesWriter interface {
+	// writeFrameBytes write the frame bytes atomically or error
+	writeFrameBytes(dfw *defaultFrameWriter) error
+}
 
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	writeCh   chan<- writeFrameRequest
-	wbuf      []byte
-	requestID uint64
-	cmd       Cmd
-	flags     FrameFlag
-	ctx       context.Context
+	fbw  frameBytesWriter
+	wbuf []byte
+	resp *response
 }
 
 // newFrameWriter creates a FrameWriter instance to write frames
-func newFrameWriter(ctx context.Context, writeCh chan<- writeFrameRequest) *defaultFrameWriter {
-	return &defaultFrameWriter{writeCh: writeCh, ctx: ctx}
+func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
+	return &defaultFrameWriter{fbw: fbw}
 }
 
 // StartWrite Write the FrameHeader.
 func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags FrameFlag) {
 
-	dfw.requestID = requestID
-	dfw.cmd = cmd
-	dfw.flags = flags
 	dfw.wbuf = append(dfw.wbuf[:0],
 		0, // 4 bytes of length, filled in in endWrite
 		0,
@@ -47,23 +47,40 @@ func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags Frame
 }
 
 func (dfw *defaultFrameWriter) Cmd() Cmd {
-	return dfw.cmd
+	return Cmd(uint32(dfw.wbuf[13])<<16 | uint32(dfw.wbuf[14])<<8 | uint32(dfw.wbuf[15]))
+}
+
+func (dfw *defaultFrameWriter) SetCmd(cmd Cmd) {
+	_ = append(dfw.wbuf[0:13], byte(cmd>>16), byte(cmd>>8), byte(cmd))
 }
 
 func (dfw *defaultFrameWriter) RequestID() uint64 {
-	return dfw.requestID
+	requestID := binary.BigEndian.Uint64(dfw.wbuf[4:])
+	return requestID
+}
+
+func (dfw *defaultFrameWriter) SetRequestID(requestID uint64) {
+	binary.BigEndian.PutUint64(dfw.wbuf[4:], requestID)
 }
 
 func (dfw *defaultFrameWriter) Flags() FrameFlag {
-	return dfw.flags
+	return FrameFlag(dfw.wbuf[12])
+}
+
+func (dfw *defaultFrameWriter) SetFlags(flags FrameFlag) {
+	_ = append(dfw.wbuf[:12], byte(flags))
 }
 
 func (dfw *defaultFrameWriter) GetWbuf() []byte {
 	return dfw.wbuf
 }
 
+func (dfw *defaultFrameWriter) Payload() []byte {
+	return dfw.wbuf[16:]
+}
+
 // EndWrite finishes write frame
-func (dfw *defaultFrameWriter) EndWrite() error {
+func (dfw *defaultFrameWriter) EndWrite() (err error) {
 
 	length := len(dfw.wbuf) - 4
 	_ = append(dfw.wbuf[:0],
@@ -71,26 +88,20 @@ func (dfw *defaultFrameWriter) EndWrite() error {
 		byte(length>>16),
 		byte(length>>8),
 		byte(length))
-	_ = append(dfw.wbuf[:12], byte(dfw.flags)) // flags may be changed by StreamWriter
 
-	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
-	select {
-	case dfw.writeCh <- wfr:
-	case <-dfw.ctx.Done():
-		return dfw.ctx.Err()
-	}
+	err = dfw.fbw.writeFrameBytes(dfw)
+	dfw.wbuf = dfw.wbuf[:16]
 
-	select {
-	case err := <-wfr.result:
-		return err
-	case <-dfw.ctx.Done():
-		return dfw.ctx.Err()
-	}
+	return
+}
+
+func (dfw *defaultFrameWriter) Length() int {
+	return int(binary.BigEndian.Uint32(dfw.wbuf))
 }
 
 func (dfw *defaultFrameWriter) StreamEndWrite(end bool) error {
 	if end {
-		dfw.flags = dfw.flags.ToEndStream()
+		dfw.SetFlags(dfw.Flags().ToEndStream())
 	}
 	return dfw.EndWrite()
 }
@@ -122,3 +133,22 @@ func (dfw *defaultFrameWriter) WriteUint8(v uint8) {
 
 // WriteBytes write multiple bytes
 func (dfw *defaultFrameWriter) WriteBytes(v []byte) { dfw.wbuf = append(dfw.wbuf, v...) }
+
+type defaultStreamWriter defaultFrameWriter
+
+func (dsw *defaultStreamWriter) StartWrite(cmd Cmd) {
+	dfw := (*defaultFrameWriter)(dsw)
+	dfw.SetCmd(cmd)
+}
+
+func (dsw *defaultStreamWriter) RequestID() uint64 {
+	return (*defaultFrameWriter)(dsw).RequestID()
+}
+
+func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
+	(*defaultFrameWriter)(dsw).WriteBytes(v)
+}
+
+func (dsw *defaultStreamWriter) EndWrite(end bool) error {
+	return (*defaultFrameWriter)(dsw).StreamEndWrite(end)
+}

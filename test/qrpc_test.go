@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
+	"net"
 	"net/http"
 	"sync"
 	"testing"
@@ -14,6 +16,8 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/zhiqiangxu/qrpc"
+	"google.golang.org/grpc"
+	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
 
 const (
@@ -84,7 +88,7 @@ func TestCancel(t *testing.T) {
 
 func TestPerformance(t *testing.T) {
 
-	srv := &http.Server{Addr: "0.0.0.0:8888"}
+	srv := &http.Server{Addr: "0.0.0.0:9999"}
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "hello world xu\n")
 	})
@@ -95,9 +99,10 @@ func TestPerformance(t *testing.T) {
 		}
 	}()
 
+	time.Sleep(time.Second)
 	go startServer()
 	time.Sleep(time.Second)
-	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
+	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{WriteFrameChSize: 1000}, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -105,15 +110,15 @@ func TestPerformance(t *testing.T) {
 	var wg sync.WaitGroup
 	startTime := time.Now()
 	for {
-		_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-		if err != nil {
-			panic(err)
-		}
 
 		qrpc.GoFunc(&wg, func() {
-			frame, _ := resp.GetFrame()
-			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
-				panic("fail")
+			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+			if err != nil {
+				panic(err)
+			}
+			frame, err := resp.GetFrame()
+			if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+				panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
 			}
 		})
 		i++
@@ -256,29 +261,62 @@ func TestHTTPPerformance(t *testing.T) {
 	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
-// func TestGRPCPerformance(t *testing.T) {
-// 	conn, err := grpc.Dial("localhost:50051", grpc.WithInsecure())
-// 	if err != nil {
-// 		panic(err)
-// 	}
-// 	c := pb.NewGreeterClient(conn)
-// 	name := "xu"
-// 	startTime := time.Now()
-// 	i := 0
-// 	for {
-// 		_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
-// 		if err != nil {
-// 			panic(err)
-// 		}
-// 		i++
+const grpcAddr = "localhost:50051"
 
-// 		if i > n {
-// 			break
-// 		}
-// 	}
-// 	endTime := time.Now()
-// 	fmt.Println(n, "request took", endTime.Sub(startTime))
-// }
+func TestGRPCPerformance(t *testing.T) {
+	go startGRPCServer()
+	time.Sleep(time.Second)
+
+	conn, err := grpc.Dial(grpcAddr, grpc.WithInsecure())
+	if err != nil {
+		panic(err)
+	}
+	c := pb.NewGreeterClient(conn)
+	name := "xu"
+	startTime := time.Now()
+	i := 0
+	var wg sync.WaitGroup
+	for {
+		qrpc.GoFunc(&wg, func() {
+			_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
+			if err != nil {
+				panic(err)
+			}
+		})
+
+		i++
+
+		if i > n {
+			break
+		}
+	}
+	wg.Wait()
+	endTime := time.Now()
+	fmt.Println(n, "request took", endTime.Sub(startTime))
+}
+
+// grpcserver is used to implement helloworld.GreeterServer.
+type grpcserver struct {
+	// pb.UnimplementedGreeterServer
+}
+
+// SayHello implements helloworld.GreeterServer
+func (s *grpcserver) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
+	// log.Printf("Received: %v", in.GetName())
+	return &pb.HelloReply{Message: "Hello " + in.GetName()}, nil
+}
+
+func startGRPCServer() {
+	lis, err := net.Listen("tcp", grpcAddr)
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+	s := grpc.NewServer()
+	pb.RegisterGreeterServer(s, &grpcserver{})
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
 
 const (
 	HelloCmd qrpc.Cmd = iota
@@ -300,7 +338,7 @@ func startServer() {
 		}
 	})
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000}}
+		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000, WriteFrameChSize: 1000}}
 	server := qrpc.NewServer(bindings)
 	err := server.ListenAndServe()
 	if err != nil {
