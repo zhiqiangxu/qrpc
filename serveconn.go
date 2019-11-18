@@ -462,6 +462,10 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 
 }
 
+var writeBuffersChanPool = sync.Pool{New: func() interface{} {
+	return make(chan error, 1)
+}}
+
 func (sc *serveconn) writeBuffers() error {
 	if len(sc.cachedRequests) == 0 {
 		// nothing to do
@@ -503,8 +507,23 @@ func (sc *serveconn) writeBuffers() error {
 
 	// LogInfo("sc buff size", len(sc.cachedRequests))
 
-	_, err := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+	var err error
+	{
+		resultChan := writeBuffersChanPool.Get().(chan error)
+		err = sc.server.wp.run(func() {
+			_, werr := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+			resultChan <- werr
+		})
+
+		if err == nil {
+			err = <-resultChan
+		}
+
+		writeBuffersChanPool.Put(resultChan)
+	}
+
 	if err != nil {
+
 		LogDebug(unsafe.Pointer(sc), "serveconn.writeBuffers", err)
 		sc.Close()
 

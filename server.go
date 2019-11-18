@@ -125,6 +125,8 @@ type Server struct {
 
 	wg sync.WaitGroup // wait group for goroutines
 
+	wp *workerPool
+
 	pushID uint64
 }
 
@@ -154,6 +156,7 @@ func NewServer(bindings []ServerBinding) *Server {
 		activeConn:       make([]sync.Map, len(bindings)),
 		throttle:         make([]atomic.Value, len(bindings)),
 		closeRateLimiter: closeRateLimiter,
+		wp:               newWorkerPool(),
 	}
 }
 
@@ -456,6 +459,9 @@ func (srv *Server) Shutdown() error {
 	for _, f := range srv.shutdownFunc {
 		f()
 	}
+
+	// close worker pool
+	srv.wp.close()
 
 done:
 	srv.wg.Wait()
