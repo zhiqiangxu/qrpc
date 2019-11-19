@@ -125,13 +125,13 @@ func dialTCP(addr string, dialConfig DialConfig) (rwc net.Conn, err error) {
 	if dialConfig.RBufSize > 0 {
 		sockOptErr := tc.SetReadBuffer(dialConfig.RBufSize)
 		if sockOptErr != nil {
-			LogError("SetReadBuffer", dialConfig.RBufSize, "err", err)
+			LogError("SetReadBuffer", dialConfig.RBufSize, "sockOptErr", sockOptErr)
 		}
 	}
 	if dialConfig.WBufSize > 0 {
 		sockOptErr := tc.SetWriteBuffer(dialConfig.WBufSize)
 		if sockOptErr != nil {
-			LogError("SetWriteBuffer", dialConfig.WBufSize, "err", err)
+			LogError("SetWriteBuffer", dialConfig.WBufSize, "sockOptErr", sockOptErr)
 		}
 	}
 

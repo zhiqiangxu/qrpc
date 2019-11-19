@@ -32,13 +32,13 @@ func DialConn(address string, dialConfig qrpc.DialConfig) (nc net.Conn, err erro
 			if dialConfig.RBufSize > 0 {
 				sockOptErr := tc.SetReadBuffer(dialConfig.RBufSize)
 				if sockOptErr != nil {
-					qrpc.LogError("SetReadBuffer err", err, "RBufSize", dialConfig.RBufSize)
+					qrpc.LogError("SetReadBuffer err", sockOptErr, "RBufSize", dialConfig.RBufSize)
 				}
 			}
 			if dialConfig.WBufSize > 0 {
 				sockOptErr := tc.SetWriteBuffer(dialConfig.WBufSize)
 				if sockOptErr != nil {
-					qrpc.LogError("SetWriteBuffer err", err, "WBufSize", dialConfig.WBufSize)
+					qrpc.LogError("SetWriteBuffer err", sockOptErr, "WBufSize", dialConfig.WBufSize)
 				}
 			}
 			return
