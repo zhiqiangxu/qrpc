@@ -18,9 +18,12 @@ type defaultFrameWriter struct {
 	resp *response
 }
 
+// DefaultWBufSize for default wbuf size
+var DefaultWBufSize = 1024
+
 // newFrameWriter creates a FrameWriter instance to write frames
 func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
-	return &defaultFrameWriter{fbw: fbw}
+	return &defaultFrameWriter{fbw: fbw, wbuf: make([]byte, 0, DefaultWBufSize)}
 }
 
 // StartWrite Write the FrameHeader.
