@@ -41,6 +41,7 @@ type StreamWriter interface {
 
 // A Handler responds to an qrpc request.
 type Handler interface {
+	// FrameWriter will be recycled when ServeQRPC finishes, so don't cache it
 	ServeQRPC(FrameWriter, *RequestFrame)
 }
 

@@ -175,7 +175,9 @@ func (sc *serveconn) serve() {
 			} else {
 				GoFunc(&sc.wg, func() {
 					defer sc.handleRequestPanic(res.f, time.Now())
-					handler.ServeQRPC(sc.GetWriter(), res.f)
+					w := newFrameWriter(sc)
+					handler.ServeQRPC(w, res.f)
+					w.Finalize()
 				})
 			}
 		}

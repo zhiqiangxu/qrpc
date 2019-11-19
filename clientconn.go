@@ -333,7 +333,10 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 
 // ResetFrame resets a stream by requestID
 func (conn *Connection) ResetFrame(requestID uint64, reason Cmd) error {
-	return conn.getWriter().ResetFrame(requestID, reason)
+	w := conn.getWriter()
+	err := w.ResetFrame(requestID, reason)
+	w.Finalize()
+	return err
 }
 
 // close current rwc
@@ -433,7 +436,9 @@ func (conn *Connection) readFrames() {
 				}
 				GoFunc(conn.loopWG, func() {
 					defer conn.handleRequestPanic((*RequestFrame)(frame), time.Now())
-					conn.conf.Handler.ServeQRPC(conn.getWriter(), (*RequestFrame)(frame))
+					w := conn.getWriter()
+					conn.conf.Handler.ServeQRPC(w, (*RequestFrame)(frame))
+					w.Finalize()
 				})
 				continue
 			}
@@ -462,16 +467,17 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 	s := frame.Stream
 	if !s.IsSelfClosed() {
 		// send error frame
-		writer := conn.getWriter()
-		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
-		err := writer.EndWrite()
+		w := conn.getWriter()
+		w.StartWrite(frame.RequestID, 0, StreamRstFlag)
+		err := w.EndWrite()
 		if err != nil {
 			LogDebug("Connection.send error frame", err, frame)
 		}
+		w.Finalize()
 	}
 }
 
-func (conn *Connection) getWriter() FrameWriter {
+func (conn *Connection) getWriter() *defaultFrameWriter {
 	return newFrameWriter(conn)
 }
 

@@ -2,6 +2,7 @@ package qrpc
 
 import (
 	"encoding/binary"
+	"sync"
 )
 
 // frameBytesWriter for writing frame bytes
@@ -21,9 +22,21 @@ type defaultFrameWriter struct {
 // DefaultWBufSize for default wbuf size
 var DefaultWBufSize = 1024
 
+var fwPool = sync.Pool{New: func() interface{} {
+	return &defaultFrameWriter{wbuf: make([]byte, 0, DefaultWBufSize)}
+}}
+
 // newFrameWriter creates a FrameWriter instance to write frames
 func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
-	return &defaultFrameWriter{fbw: fbw, wbuf: make([]byte, 0, DefaultWBufSize)}
+	fw := fwPool.Get().(*defaultFrameWriter)
+	fw.fbw = fbw
+	return fw
+}
+
+func (dfw *defaultFrameWriter) Finalize() {
+	dfw.fbw = nil
+	dfw.resp = nil
+	fwPool.Put(dfw)
 }
 
 // StartWrite Write the FrameHeader.
