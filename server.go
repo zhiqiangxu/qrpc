@@ -114,7 +114,7 @@ type Server struct {
 
 	// manages below
 	mu           sync.Mutex
-	listeners    map[net.Listener]struct{}
+	listeners    []net.Listener
 	doneChan     chan struct{}
 	shutdownFunc []func()
 	done         bool
@@ -151,7 +151,7 @@ func NewServer(bindings []ServerBinding) *Server {
 	return &Server{
 		bindings:         bindings,
 		upTime:           time.Now(),
-		listeners:        make(map[net.Listener]struct{}),
+		listeners:        make([]net.Listener, len(bindings)),
 		doneChan:         make(chan struct{}),
 		id2Conn:          make([]sync.Map, len(bindings)),
 		activeConn:       make([]sync.Map, len(bindings)),
@@ -242,12 +242,33 @@ var (
 // returned error is ErrServerClosed.
 func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 
-	l := tcpKeepAliveListener{qrpcListener}
+	var applyConnOpts func(TCPConn)
+	if srv.bindings[idx].WBufSize > 0 || srv.bindings[idx].RBufSize > 0 {
+		wbufSize := srv.bindings[idx].WBufSize
+		rbufSize := srv.bindings[idx].RBufSize
+		applyConnOpts = func(tc TCPConn) {
+			if wbufSize > 0 {
+				err := tc.SetWriteBuffer(wbufSize)
+				if err != nil {
+					LogError("SetWriteBuffer", err)
+				}
+			}
+			if rbufSize > 0 {
+				err := tc.SetReadBuffer(wbufSize)
+				if err != nil {
+					LogError("SetReadBuffer", err)
+				}
+			}
+		}
+	}
+	l := tcpKeepAliveListener{
+		Listener:      qrpcListener,
+		applyConnOpts: applyConnOpts}
 	defer l.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 
-	srv.trackListener(l, true)
-	defer srv.trackListener(l, false)
+	srv.trackListener(l, idx, true)
+	defer srv.trackListener(l, idx, false)
 
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
@@ -299,6 +320,7 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 // connections.
 type tcpKeepAliveListener struct {
 	Listener
+	applyConnOpts func(TCPConn)
 }
 
 // TCPConn in qrpc's aspect
@@ -306,6 +328,8 @@ type TCPConn interface {
 	net.Conn
 	SetKeepAlive(keepalive bool) error
 	SetKeepAlivePeriod(d time.Duration) error
+	SetWriteBuffer(bytes int) error
+	SetReadBuffer(bytes int) error
 }
 
 func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
@@ -325,17 +349,20 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 
 	tc.SetKeepAlive(true)
 	tc.SetKeepAlivePeriod(20 * time.Second)
+	if ln.applyConnOpts != nil {
+		ln.applyConnOpts(tc)
+	}
 
 	return
 }
 
-func (srv *Server) trackListener(ln net.Listener, add bool) {
+func (srv *Server) trackListener(ln net.Listener, idx int, add bool) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if add {
-		srv.listeners[ln] = struct{}{}
+		srv.listeners[idx] = ln
 	} else {
-		delete(srv.listeners, ln)
+		srv.listeners[idx] = nil
 	}
 }
 
@@ -520,11 +547,14 @@ func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) 
 }
 
 func (srv *Server) closeListenersLocked() (err error) {
-	for ln := range srv.listeners {
+	for idx, ln := range srv.listeners {
+		if ln == nil {
+			continue
+		}
 		if err = ln.Close(); err != nil {
 			return
 		}
-		delete(srv.listeners, ln)
+		srv.listeners[idx] = nil
 	}
 	return
 }

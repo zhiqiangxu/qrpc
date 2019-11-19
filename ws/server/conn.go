@@ -108,3 +108,11 @@ func (c *conn) SetKeepAlive(keepalive bool) (err error) {
 func (c *conn) SetKeepAlivePeriod(d time.Duration) (err error) {
 	return c.getTCPConn().SetKeepAlivePeriod(d)
 }
+
+func (c *conn) SetWriteBuffer(bytes int) error {
+	return c.getTCPConn().SetWriteBuffer(bytes)
+}
+
+func (c *conn) SetReadBuffer(bytes int) error {
+	return c.getTCPConn().SetReadBuffer(bytes)
+}

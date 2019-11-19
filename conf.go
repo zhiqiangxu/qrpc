@@ -13,6 +13,8 @@ type ServerBinding struct {
 	Handler             Handler // handler to invoke
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
+	WBufSize            int // best effort only, check log for error
+	RBufSize            int // best effort only, check log for error
 	ReadFrameChSize     int
 	WriteFrameChSize    int
 	MaxFrameSize        int
