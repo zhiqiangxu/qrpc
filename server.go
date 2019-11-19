@@ -248,15 +248,15 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 		rbufSize := srv.bindings[idx].RBufSize
 		applyConnOpts = func(tc TCPConn) {
 			if wbufSize > 0 {
-				err := tc.SetWriteBuffer(wbufSize)
-				if err != nil {
-					LogError("SetWriteBuffer", err)
+				sockOptErr := tc.SetWriteBuffer(wbufSize)
+				if sockOptErr != nil {
+					LogError("SetWriteBuffer", sockOptErr, "wbufSize", wbufSize)
 				}
 			}
 			if rbufSize > 0 {
-				err := tc.SetReadBuffer(wbufSize)
-				if err != nil {
-					LogError("SetReadBuffer", err)
+				sockOptErr := tc.SetReadBuffer(rbufSize)
+				if sockOptErr != nil {
+					LogError("SetReadBuffer", sockOptErr, "rbufSize", rbufSize)
 				}
 			}
 		}
