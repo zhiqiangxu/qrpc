@@ -7,6 +7,7 @@ import (
 	"github.com/zhiqiangxu/qrpc"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 )
 
 // conn impl net.Conn for websocket overlay
@@ -41,13 +42,13 @@ func (c *conn) Read(b []byte) (n int, err error) {
 				return
 			}
 		case msgType == websocket.PingMessage || msgType == websocket.PongMessage || msgType == websocket.TextMessage:
-			qrpc.LogError("got ping/pong/text msg", msgType, msg)
+			qrpc.Logger().Error("got ping/pong/text msg", zap.Int("msgType", msgType), zap.ByteString("msg", msg))
 			err = c.wc.Close()
 			if err != nil {
 				return
 			}
 		case len(msg) == 0:
-			qrpc.LogError("msg length zero")
+			qrpc.Logger().Error("msg length zero")
 			continue
 		default:
 			c.buffer = msg
@@ -107,4 +108,12 @@ func (c *conn) SetKeepAlive(keepalive bool) (err error) {
 
 func (c *conn) SetKeepAlivePeriod(d time.Duration) (err error) {
 	return c.getTCPConn().SetKeepAlivePeriod(d)
+}
+
+func (c *conn) SetWriteBuffer(bytes int) error {
+	return c.getTCPConn().SetWriteBuffer(bytes)
+}
+
+func (c *conn) SetReadBuffer(bytes int) error {
+	return c.getTCPConn().SetReadBuffer(bytes)
 }

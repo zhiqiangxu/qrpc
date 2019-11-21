@@ -2,10 +2,11 @@ package client
 
 import (
 	"net"
-	"time"
+
+	"github.com/zhiqiangxu/qrpc"
 )
 
 // OverlayNetwork impl the overlay network for ws
-func OverlayNetwork(address string, timeout time.Duration) (net.Conn, error) {
-	return DialConn(address, timeout)
+func OverlayNetwork(address string, dialConfig qrpc.DialConfig) (net.Conn, error) {
+	return DialConn(address, dialConfig)
 }

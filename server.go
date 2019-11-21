@@ -12,6 +12,7 @@ import (
 
 	"github.com/oklog/run"
 	"go.uber.org/ratelimit"
+	"go.uber.org/zap"
 )
 
 var (
@@ -41,6 +42,7 @@ type StreamWriter interface {
 
 // A Handler responds to an qrpc request.
 type Handler interface {
+	// FrameWriter will be recycled when ServeQRPC finishes, so don't cache it
 	ServeQRPC(FrameWriter, *RequestFrame)
 }
 
@@ -97,7 +99,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {
-		LogError("cmd not registered", r.Cmd)
+		l.Error("cmd not registered", zap.Uint32("cmd", uint32(r.Cmd)))
 		r.Close()
 		return
 	}
@@ -113,7 +115,7 @@ type Server struct {
 
 	// manages below
 	mu           sync.Mutex
-	listeners    map[net.Listener]struct{}
+	listeners    []net.Listener
 	doneChan     chan struct{}
 	shutdownFunc []func()
 	done         bool
@@ -124,6 +126,8 @@ type Server struct {
 	closeRateLimiter []ratelimit.Limiter
 
 	wg sync.WaitGroup // wait group for goroutines
+
+	wp *workerPool
 
 	pushID uint64
 }
@@ -148,12 +152,13 @@ func NewServer(bindings []ServerBinding) *Server {
 	return &Server{
 		bindings:         bindings,
 		upTime:           time.Now(),
-		listeners:        make(map[net.Listener]struct{}),
+		listeners:        make([]net.Listener, len(bindings)),
 		doneChan:         make(chan struct{}),
 		id2Conn:          make([]sync.Map, len(bindings)),
 		activeConn:       make([]sync.Map, len(bindings)),
 		throttle:         make([]atomic.Value, len(bindings)),
 		closeRateLimiter: closeRateLimiter,
+		wp:               newWorkerPool(),
 	}
 }
 
@@ -204,7 +209,7 @@ func (srv *Server) ServeAll() error {
 			return srv.Serve(binding.ln, idx)
 		}, func(err error) {
 			serr := srv.Shutdown()
-			LogError("err", err, "serr", serr)
+			l.Error("Shutdown", zap.Error(err), zap.Error(serr))
 		})
 	}
 
@@ -238,19 +243,40 @@ var (
 // returned error is ErrServerClosed.
 func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 
-	l := tcpKeepAliveListener{qrpcListener}
-	defer l.Close()
+	var applyConnOpts func(TCPConn)
+	if srv.bindings[idx].WBufSize > 0 || srv.bindings[idx].RBufSize > 0 {
+		wbufSize := srv.bindings[idx].WBufSize
+		rbufSize := srv.bindings[idx].RBufSize
+		applyConnOpts = func(tc TCPConn) {
+			if wbufSize > 0 {
+				sockOptErr := tc.SetWriteBuffer(wbufSize)
+				if sockOptErr != nil {
+					l.Error("SetWriteBuffer", zap.Int("wbufSize", wbufSize), zap.Error(sockOptErr))
+				}
+			}
+			if rbufSize > 0 {
+				sockOptErr := tc.SetReadBuffer(rbufSize)
+				if sockOptErr != nil {
+					l.Error("SetReadBuffer", zap.Int("rbufSize", rbufSize), zap.Error(sockOptErr))
+				}
+			}
+		}
+	}
+	ln := tcpKeepAliveListener{
+		Listener:      qrpcListener,
+		applyConnOpts: applyConnOpts}
+	defer ln.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 
-	srv.trackListener(l, true)
-	defer srv.trackListener(l, false)
+	srv.trackListener(ln, idx, true)
+	defer srv.trackListener(ln, idx, false)
 
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	for {
 		srv.waitThrottle(idx, srv.doneChan)
-		l.SetDeadline(time.Now().Add(defaultAcceptTimeout))
-		rw, e := l.Accept()
+		ln.SetDeadline(time.Now().Add(defaultAcceptTimeout))
+		rw, e := ln.Accept()
 		if e != nil {
 			select {
 			case <-srv.doneChan:
@@ -274,12 +300,12 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				LogError("qrpc: Accept error", e, "retrying in", tempDelay)
+				l.Error("qrpc: Accept", zap.Duration("retrying in", tempDelay), zap.Error(e))
 				time.Sleep(tempDelay)
 				continue
 			}
-			LogError("qrpc: Accept fatal error", e) // accept4: too many open files in system
-			time.Sleep(time.Second)                 // keep trying instead of quit
+			l.Error("qrpc: Accept fatal", zap.Error(e)) // accept4: too many open files in system
+			time.Sleep(time.Second)                     // keep trying instead of quit
 			continue
 		}
 		tempDelay = 0
@@ -295,6 +321,7 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 // connections.
 type tcpKeepAliveListener struct {
 	Listener
+	applyConnOpts func(TCPConn)
 }
 
 // TCPConn in qrpc's aspect
@@ -302,6 +329,8 @@ type TCPConn interface {
 	net.Conn
 	SetKeepAlive(keepalive bool) error
 	SetKeepAlivePeriod(d time.Duration) error
+	SetWriteBuffer(bytes int) error
+	SetReadBuffer(bytes int) error
 }
 
 func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
@@ -321,17 +350,20 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 
 	tc.SetKeepAlive(true)
 	tc.SetKeepAlivePeriod(20 * time.Second)
+	if ln.applyConnOpts != nil {
+		ln.applyConnOpts(tc)
+	}
 
 	return
 }
 
-func (srv *Server) trackListener(ln net.Listener, add bool) {
+func (srv *Server) trackListener(ln net.Listener, idx int, add bool) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if add {
-		srv.listeners[ln] = struct{}{}
+		srv.listeners[idx] = ln
 	} else {
-		delete(srv.listeners, ln)
+		srv.listeners[idx] = nil
 	}
 }
 
@@ -381,7 +413,7 @@ check:
 		if !ok {
 			<-ch
 		}
-		LogDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
+		l.Debug("trigger closeUntracked", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Uintptr("vsc", uintptr(unsafe.Pointer(vsc))))
 
 		err := vsc.closeUntracked()
 		if err != nil {
@@ -457,6 +489,9 @@ func (srv *Server) Shutdown() error {
 		f()
 	}
 
+	// close worker pool
+	srv.wp.close()
+
 done:
 	srv.wg.Wait()
 
@@ -513,11 +548,14 @@ func (srv *Server) WalkConn(idx int, f func(FrameWriter, *ConnectionInfo) bool) 
 }
 
 func (srv *Server) closeListenersLocked() (err error) {
-	for ln := range srv.listeners {
+	for idx, ln := range srv.listeners {
+		if ln == nil {
+			continue
+		}
 		if err = ln.Close(); err != nil {
 			return
 		}
-		delete(srv.listeners, ln)
+		srv.listeners[idx] = nil
 	}
 	return
 }

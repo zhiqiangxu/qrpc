@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -96,17 +98,45 @@ func (r *response) Close() {
 func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (conn *Connection, err error) {
 	var rwc net.Conn
 	if conf.OverlayNetwork != nil {
-		rwc, err = conf.OverlayNetwork(addr, conf.DialTimeout)
+		rwc, err = conf.OverlayNetwork(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	} else {
-		rwc, err = net.DialTimeout("tcp", addr, conf.DialTimeout)
+		rwc, err = dialTCP(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	}
 
 	if err != nil {
-		LogError("NewConnection Dial", err)
+		l.Error("NewConnection Dial", zap.Error(err))
 		return
 	}
 
 	conn = newConnection(rwc, []string{addr}, conf, f, false)
+	return
+}
+
+func dialTCP(addr string, dialConfig DialConfig) (rwc net.Conn, err error) {
+	rwc, err = net.DialTimeout("tcp", addr, dialConfig.DialTimeout)
+	if err != nil {
+		l.Error("dialTCP addr", zap.String("addr", addr), zap.Error(err))
+		return
+	}
+
+	if dialConfig.RBufSize <= 0 && dialConfig.WBufSize <= 0 {
+		return
+	}
+
+	tc := rwc.(*net.TCPConn)
+	if dialConfig.RBufSize > 0 {
+		sockOptErr := tc.SetReadBuffer(dialConfig.RBufSize)
+		if sockOptErr != nil {
+			l.Error("SetReadBuffer", zap.Int("RBufSize", dialConfig.RBufSize), zap.Error(sockOptErr))
+		}
+	}
+	if dialConfig.WBufSize > 0 {
+		sockOptErr := tc.SetWriteBuffer(dialConfig.WBufSize)
+		if sockOptErr != nil {
+			l.Error("SetWriteBuffer", zap.Int("WBufSize", dialConfig.WBufSize), zap.Error(sockOptErr))
+		}
+	}
+
 	return
 }
 
@@ -125,12 +155,12 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 		err error
 	)
 	if conf.OverlayNetwork != nil {
-		rwc, err = conf.OverlayNetwork(copy[len(copy)-1], conf.DialTimeout)
+		rwc, err = conf.OverlayNetwork(copy[len(copy)-1], DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	} else {
-		rwc, err = net.DialTimeout("tcp", copy[len(copy)-1], conf.DialTimeout)
+		rwc, err = dialTCP(copy[len(copy)-1], DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	}
 	if err != nil {
-		LogError("initconnect DialTimeout", err)
+		l.Error("initconnect DialTimeout", zap.Error(err))
 		rwc = nil
 	}
 	return newConnection(rwc, copy, conf, f, true)
@@ -221,13 +251,13 @@ func (conn *Connection) connect() error {
 			err error
 		)
 		if conn.conf.OverlayNetwork != nil {
-			rwc, err = conn.conf.OverlayNetwork(addr, conn.conf.DialTimeout)
+			rwc, err = conn.conf.OverlayNetwork(addr, DialConfig{DialTimeout: conn.conf.DialTimeout, WBufSize: conn.conf.WBufSize, RBufSize: conn.conf.RBufSize})
 		} else {
-			rwc, err = net.DialTimeout("tcp", addr, conn.conf.DialTimeout)
+			rwc, err = dialTCP(addr, DialConfig{DialTimeout: conn.conf.DialTimeout, WBufSize: conn.conf.WBufSize, RBufSize: conn.conf.RBufSize})
 		}
 
 		if err != nil {
-			LogError("connect DialTimeout", err)
+			l.Error("connect DialTimeout", zap.Error(err))
 		} else {
 			ctx, cancelCtx := context.WithCancel(conn.ctx)
 			conn.mu.Lock()
@@ -263,7 +293,7 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) 
 	flags = flags.ToStream()
 	_, resp, writer, err := conn.writeFirstFrame(cmd, flags, payload)
 	if err != nil {
-		LogError("writeFirstFrame", err)
+		l.Error("writeFirstFrame", zap.Error(err))
 		return nil, nil, err
 	}
 	return (*defaultStreamWriter)(writer), resp, nil
@@ -337,7 +367,10 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 
 // ResetFrame resets a stream by requestID
 func (conn *Connection) ResetFrame(requestID uint64, reason Cmd) error {
-	return conn.getWriter().ResetFrame(requestID, reason)
+	w := conn.getWriter()
+	err := w.ResetFrame(requestID, reason)
+	w.Finalize()
+	return err
 }
 
 // close current rwc
@@ -428,21 +461,23 @@ func (conn *Connection) readFrames() {
 			}
 			if conn.conf.Handler != nil {
 				if !frame.FromServer() {
-					LogError("clientconn get RequestFrame.RequestID not even")
+					l.Error("clientconn get RequestFrame.RequestID not even")
 					return
 				}
 				if !frame.Flags.IsNonBlock() {
-					LogError("clientconn get RequestFrame block")
+					l.Error("clientconn get RequestFrame block")
 					return
 				}
 				GoFunc(conn.loopWG, func() {
 					defer conn.handleRequestPanic((*RequestFrame)(frame), time.Now())
-					conn.conf.Handler.ServeQRPC(conn.getWriter(), (*RequestFrame)(frame))
+					w := conn.getWriter()
+					conn.conf.Handler.ServeQRPC(w, (*RequestFrame)(frame))
+					w.Finalize()
 				})
 				continue
 			}
 
-			LogError("dangling resp", frame.RequestID)
+			l.Error("dangling resp", zap.Uint64("requestID", frame.RequestID))
 
 			continue
 		}
@@ -460,22 +495,23 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		LogError("Connection.handleRequestPanic", err, string(buf))
+		l.Error("Connection.handleRequestPanic", zap.String("stack", String(buf)), zap.Any("err", err))
 	}
 
 	s := frame.Stream
 	if !s.IsSelfClosed() {
 		// send error frame
-		writer := conn.getWriter()
-		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
-		err := writer.EndWrite()
+		w := conn.getWriter()
+		w.StartWrite(frame.RequestID, 0, StreamRstFlag)
+		err := w.EndWrite()
 		if err != nil {
-			LogDebug("Connection.send error frame", err, frame)
+			l.Debug("Connection.send error frame", zap.Any("frame", frame), zap.Error(err))
 		}
+		w.Finalize()
 	}
 }
 
-func (conn *Connection) getWriter() FrameWriter {
+func (conn *Connection) getWriter() *defaultFrameWriter {
 	return newFrameWriter(conn)
 }
 
@@ -533,7 +569,7 @@ firstFrame:
 		} else if !flags.IsPush() { // skip stream logic if PushFlag set
 			s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
 			if !loaded {
-				LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+				l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
 			}
 			if !s.AddOutFrame(requestID, flags) {
 				res.result <- ErrWriteAfterCloseSelf
@@ -575,7 +611,7 @@ firstFrame:
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
 				if !loaded {
-					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+					l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
@@ -627,10 +663,9 @@ func (conn *Connection) writeBuffers() error {
 	}
 	conn.mu.Unlock()
 
-	// LogInfo("conn buff size", len(conn.cachedRequests))
 	_, err := conn.loopBytesWriter.writeBuffers(&conn.cachedBuffs)
 	if err != nil {
-		LogError(unsafe.Pointer(conn), "Connection.writeBuffers", err)
+		l.Error("Connection.writeBuffers", zap.Uintptr("conn", uintptr(unsafe.Pointer(conn))), zap.Error(err))
 
 		if opErr, ok := err.(*net.OpError); ok {
 			err = opErr.Err

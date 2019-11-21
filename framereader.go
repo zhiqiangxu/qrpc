@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net"
 	"unsafe"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -59,7 +61,7 @@ start:
 	}
 	s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 	if !loaded {
-		LogDebug(unsafe.Pointer(cs), "defaultFrameReader new stream:", requestID, flags, f.Cmd)
+		l.Debug("defaultFrameReader new stream", zap.Uintptr("cs", uintptr(unsafe.Pointer(cs))), zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(f.Cmd)))
 	}
 
 	if s.TryBind(f) {
@@ -87,10 +89,10 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	cmdAndFlags := binary.BigEndian.Uint32(header[12:])
 	cmd := Cmd(cmdAndFlags & 0xffffff)
 	flags := FrameFlag(cmdAndFlags >> 24)
-	LogDebug("size", size, "requestID", requestID, "cmd", cmd, "flags", flags)
+	l.Debug("readFrame", zap.Uint32("size", size), zap.Uint64("requestID", requestID), zap.Uint32("cmd", uint32(cmd)), zap.Uint8("flags", uint8(flags)))
 
 	if dfr.maxFrameSize > 0 && size > uint32(dfr.maxFrameSize) {
-		LogError("ErrFrameTooLarge", "size", size, "cmd", cmd, "requestID", requestID)
+		l.Error("ErrFrameTooLarge", zap.Uint32("size", size), zap.Uint32("cmd", uint32(cmd)), zap.Uint64("requestID", requestID))
 		return nil, ErrFrameTooLarge
 	}
 	if size < 12 {

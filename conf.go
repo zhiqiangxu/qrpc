@@ -20,6 +20,8 @@ type ServerBinding struct {
 	Handler             Handler // handler to invoke
 	DefaultReadTimeout  int
 	DefaultWriteTimeout int
+	WBufSize            int // best effort only, check log for error
+	RBufSize            int // best effort only, check log for error
 	ReadFrameChSize     int
 	WriteFrameChSize    int
 	MaxFrameSize        int
@@ -42,7 +44,16 @@ type ConnectionConfig struct {
 	ReadTimeout      int
 	DialTimeout      time.Duration
 	WriteFrameChSize int
+	WBufSize         int // best effort only, check log for error
+	RBufSize         int // best effort only, check log for error
 	Handler          Handler
-	OverlayNetwork   func(address string, timeout time.Duration) (net.Conn, error)
+	OverlayNetwork   func(address string, dialConfig DialConfig) (net.Conn, error)
 	Codec            CompressorCodec
+}
+
+// DialConfig for dial
+type DialConfig struct {
+	DialTimeout time.Duration
+	WBufSize    int // best effort only, check log for error
+	RBufSize    int // best effort only, check log for error
 }

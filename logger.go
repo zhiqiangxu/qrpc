@@ -2,46 +2,43 @@ package qrpc
 
 import (
 	"fmt"
-	"os"
-	"time"
+
+	"github.com/zhiqiangxu/util/logger"
+	"go.uber.org/zap"
 )
 
-type logger interface {
-	Info(msg ...interface{})
-	Error(msg ...interface{})
-	Debug(msg ...interface{})
-}
-
-const (
-	sep = " : "
+var (
+	// Logger if exported for overwrite
+	l *zap.Logger
 )
 
-// Logger is exported logger interface
-var Logger logger
-
-// LogInfo for info log
-func LogInfo(msg ...interface{}) {
-	if Logger == nil {
-		fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
-		return
-	}
-	Logger.Info(msg...)
+// Logger returns the logger for qrpc
+func Logger() *zap.Logger {
+	return l
 }
 
-// LogError for error log
-func LogError(msg ...interface{}) {
-	if Logger == nil {
-		fmt.Fprint(os.Stderr, time.Now().String(), sep, fmt.Sprintln(msg...))
-		return
-	}
-	Logger.Error(msg...)
+// SetLogger for change zap.Logger
+// should only be called in init func
+func SetLogger(zl *zap.Logger) {
+	l = zl
 }
 
-// LogDebug for debug log
-func LogDebug(msg ...interface{}) {
-	if Logger == nil {
-		// fmt.Fprint(os.Stdout, time.Now().String(), sep, fmt.Sprintln(msg...))
-		return
+func init() {
+	if l == nil {
+
+		var err error
+		config := zap.Config{
+			DisableCaller:     true,
+			DisableStacktrace: true,
+			Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
+			Encoding:          "json",
+			EncoderConfig:     zap.NewDevelopmentEncoderConfig(),
+			OutputPaths:       []string{"stdout"},
+			ErrorOutputPaths:  []string{"stderr"},
+		}
+		l, err = logger.New(config)
+		if err != nil {
+			panic(fmt.Sprintf("qrpc.zap.Build:%v", err))
+		}
 	}
-	Logger.Debug(msg...)
 }
