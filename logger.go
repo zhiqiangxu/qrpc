@@ -32,7 +32,7 @@ func init() {
 			DisableStacktrace: true,
 			Level:             zap.NewAtomicLevelAt(zap.InfoLevel),
 			Encoding:          "json",
-			EncoderConfig:     zap.NewProductionEncoderConfig(),
+			EncoderConfig:     zap.NewDevelopmentEncoderConfig(),
 			OutputPaths:       []string{"stdout"},
 			ErrorOutputPaths:  []string{"stderr"},
 		}
