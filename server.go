@@ -12,6 +12,7 @@ import (
 
 	"github.com/oklog/run"
 	"go.uber.org/ratelimit"
+	"go.uber.org/zap"
 )
 
 var (
@@ -98,7 +99,7 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 	mux.mu.RLock()
 	h, ok := mux.m[r.Cmd]
 	if !ok {
-		LogError("cmd not registered", r.Cmd)
+		l.Error("cmd not registered", zap.Uint32("cmd", uint32(r.Cmd)))
 		r.Close()
 		return
 	}
@@ -208,7 +209,7 @@ func (srv *Server) ServeAll() error {
 			return srv.Serve(binding.ln, idx)
 		}, func(err error) {
 			serr := srv.Shutdown()
-			LogError("err", err, "serr", serr)
+			l.Error("Shutdown", zap.Error(err), zap.Error(serr))
 		})
 	}
 
@@ -250,32 +251,32 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 			if wbufSize > 0 {
 				sockOptErr := tc.SetWriteBuffer(wbufSize)
 				if sockOptErr != nil {
-					LogError("SetWriteBuffer", sockOptErr, "wbufSize", wbufSize)
+					l.Error("SetWriteBuffer", zap.Int("wbufSize", wbufSize), zap.Error(sockOptErr))
 				}
 			}
 			if rbufSize > 0 {
 				sockOptErr := tc.SetReadBuffer(rbufSize)
 				if sockOptErr != nil {
-					LogError("SetReadBuffer", sockOptErr, "rbufSize", rbufSize)
+					l.Error("SetReadBuffer", zap.Int("rbufSize", rbufSize), zap.Error(sockOptErr))
 				}
 			}
 		}
 	}
-	l := tcpKeepAliveListener{
+	ln := tcpKeepAliveListener{
 		Listener:      qrpcListener,
 		applyConnOpts: applyConnOpts}
-	defer l.Close()
+	defer ln.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 
-	srv.trackListener(l, idx, true)
-	defer srv.trackListener(l, idx, false)
+	srv.trackListener(ln, idx, true)
+	defer srv.trackListener(ln, idx, false)
 
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	for {
 		srv.waitThrottle(idx, srv.doneChan)
-		l.SetDeadline(time.Now().Add(defaultAcceptTimeout))
-		rw, e := l.Accept()
+		ln.SetDeadline(time.Now().Add(defaultAcceptTimeout))
+		rw, e := ln.Accept()
 		if e != nil {
 			select {
 			case <-srv.doneChan:
@@ -299,12 +300,12 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 				if max := 1 * time.Second; tempDelay > max {
 					tempDelay = max
 				}
-				LogError("qrpc: Accept error", e, "retrying in", tempDelay)
+				l.Error("qrpc: Accept", zap.Duration("retrying in", tempDelay), zap.Error(e))
 				time.Sleep(tempDelay)
 				continue
 			}
-			LogError("qrpc: Accept fatal error", e) // accept4: too many open files in system
-			time.Sleep(time.Second)                 // keep trying instead of quit
+			l.Error("qrpc: Accept fatal", zap.Error(e)) // accept4: too many open files in system
+			time.Sleep(time.Second)                     // keep trying instead of quit
 			continue
 		}
 		tempDelay = 0
@@ -412,7 +413,7 @@ check:
 		if !ok {
 			<-ch
 		}
-		LogDebug(unsafe.Pointer(sc), "trigger closeUntracked", unsafe.Pointer(vsc))
+		l.Debug("trigger closeUntracked", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Uintptr("vsc", uintptr(unsafe.Pointer(vsc))))
 
 		err := vsc.closeUntracked()
 		if err != nil {

@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"sync"
 	"sync/atomic"
+
+	"go.uber.org/zap"
 )
 
 /* api provides utilities for make nonblocking api calls with qrpc.Connection */
@@ -48,7 +50,7 @@ func NewAPI(endpoints []string, conf ConnectionConfig, weights []int) API {
 		idxMap[endpoint] = idx
 		conn, err := NewConnection(endpoint, conf, nil)
 		if err != nil {
-			LogError("NewConnection fail", endpoint, err)
+			l.Error("NewConnection fail", zap.String("endpoint", endpoint), zap.Error(err))
 			continue
 		}
 		d.conns.Store(idx, conn)
@@ -205,7 +207,7 @@ func (api *defaultAPI) reconnectIdx(idx int) (*Connection, error) {
 	}
 	conn, err := NewConnection(api.endpoints[idx], api.conf, nil)
 	if err != nil {
-		LogError("NewConnection fail", err)
+		l.Error("NewConnection fail", zap.Error(err))
 		return nil, err
 	}
 
@@ -242,7 +244,7 @@ func (api *defaultAPI) getIdx() int {
 		}
 	}
 
-	LogError("getIdx bug")
+	l.Error("getIdx bug")
 	return 0
 }
 

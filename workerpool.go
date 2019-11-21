@@ -4,6 +4,8 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
 type workerPool struct {
@@ -25,7 +27,7 @@ func (wp *workerPool) start() {
 			defer func() {
 				err := recover()
 				if err != nil {
-					LogError("workerPool err", err)
+					l.Error("workerPool", zap.Any("err", err))
 				}
 			}()
 			for {

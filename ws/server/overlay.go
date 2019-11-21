@@ -8,6 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/zhiqiangxu/qrpc"
+	"go.uber.org/zap"
 )
 
 const (
@@ -42,7 +43,7 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 
 		c, err := upgrader.Upgrade(w, r, nil)
 		if err != nil {
-			qrpc.LogError("upgrader.Upgrade err", err)
+			qrpc.Logger().Error("upgrader.Upgrade", zap.Error(err))
 			return
 		}
 
@@ -65,7 +66,7 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 
 	go func() {
 		err := httpServer.Serve(l)
-		qrpc.LogError("httpServer.Serve err", err)
+		qrpc.Logger().Error("httpServer.Serve", zap.Error(err))
 	}()
 
 	return

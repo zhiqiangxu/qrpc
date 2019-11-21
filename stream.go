@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"go.uber.org/zap"
 )
 
 // ConnStreams hosts all streams on connection
@@ -43,7 +45,7 @@ func (cs *ConnStreams) CreateOrGetStream(ctx context.Context, requestID uint64, 
 	}
 
 	s := newStream(ctx, requestID, func() {
-		LogDebug(unsafe.Pointer(cs), "close stream", requestID, flags)
+		l.Debug("close stream", zap.Uintptr("cs", uintptr(unsafe.Pointer(cs))), zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)))
 		target.Delete(requestID)
 	})
 	v, loaded := target.LoadOrStore(requestID, s)

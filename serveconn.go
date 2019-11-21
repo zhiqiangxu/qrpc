@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+
+	"go.uber.org/zap"
 )
 
 const (
@@ -136,7 +138,7 @@ func (sc *serveconn) serve() {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			LogError("connection panic", sc.rwc.RemoteAddr().String(), err, buf)
+			l.Error("connection panic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
 		}
 		sc.Close()
 		sc.wg.Wait()
@@ -218,7 +220,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		LogError("handleRequestPanic", sc.rwc.RemoteAddr().String(), err, string(buf))
+		l.Error("handleRequestPanic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
 
 	}
 
@@ -229,7 +231,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		writer.StartWrite(frame.RequestID, 0, StreamRstFlag)
 		err := writer.EndWrite()
 		if err != nil {
-			LogDebug("send error frame", err, sc.rwc.RemoteAddr().String(), frame)
+			l.Debug("send error frame", zap.String("ip", sc.RemoteAddr()), zap.Any("frame", frame), zap.Error(err))
 		}
 	}
 
@@ -306,14 +308,14 @@ func (sc *serveconn) readFrames() (err error) {
 		sc.tryFreeStreams()
 
 		if err == ErrFrameTooLarge {
-			LogError("ErrFrameTooLarge", "ip", sc.RemoteAddr())
+			l.Error("ErrFrameTooLarge", zap.String("ip", sc.RemoteAddr()))
 		}
 
 		if binding.CounterMetric != nil {
 			errStr := fmt.Sprintf("%v", err)
 			if err != nil {
 				if binding.OverlayNetwork != nil {
-					LogError("readFrames err", err, reflect.TypeOf(err))
+					l.Error("readFrames", zap.Any("type", reflect.TypeOf(err)), zap.Error(err))
 					errStr = errStrReadFramesForOverlayNetwork
 				}
 			}
@@ -442,13 +444,13 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 
 		err = sc.collectWriteFrames(binding.WriteFrameChSize)
 		if err != nil {
-			LogDebug(unsafe.Pointer(sc), "sc.collectWriteFrames", err)
+			l.Debug("sc.collectWriteFrames", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Error(err))
 			return
 		}
 
 		err = sc.writeBuffers()
 		if err != nil {
-			LogDebug(unsafe.Pointer(sc), "writeBuffers", err)
+			l.Debug("writeBuffers", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Error(err))
 		} else {
 			// all write requests handled
 			releaseWlock = true
@@ -507,8 +509,6 @@ func (sc *serveconn) writeBuffers() error {
 		ci.l.Unlock()
 	}
 
-	// LogInfo("sc buff size", len(sc.cachedRequests))
-
 	var err error
 	{
 		resultChan := writeBuffersChanPool.Get().(chan error)
@@ -526,7 +526,7 @@ func (sc *serveconn) writeBuffers() error {
 
 	if err != nil {
 
-		LogDebug(unsafe.Pointer(sc), "serveconn.writeBuffers", err)
+		l.Debug("serveconn.writeBuffers", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Error(err))
 		sc.Close()
 
 		if opErr, ok := err.(*net.OpError); ok {
@@ -581,7 +581,7 @@ func (sc *serveconn) collectWriteFrames(batch int) error {
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
 				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
 				if !loaded {
-					LogDebug("serveconn new stream", requestID, flags, dfw.Cmd())
+					l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
