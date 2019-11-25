@@ -129,6 +129,18 @@ func (dfw *defaultFrameWriter) EndWrite() (err error) {
 		}
 	}
 
+	err = dfw.endWrite()
+
+	return
+}
+
+func (dfw *defaultFrameWriter) EndWriteCompressed() (err error) {
+	dfw.SetFlags(dfw.Flags().ToCodec())
+	return dfw.endWrite()
+}
+
+func (dfw *defaultFrameWriter) endWrite() (err error) {
+
 	length := len(dfw.wbuf) - 4
 	_ = append(dfw.wbuf[:0],
 		byte(length>>24),
@@ -138,7 +150,6 @@ func (dfw *defaultFrameWriter) EndWrite() (err error) {
 
 	err = dfw.fbw.writeFrameBytes(dfw)
 	dfw.wbuf = dfw.wbuf[:16]
-
 	return
 }
 
@@ -198,4 +209,8 @@ func (dsw *defaultStreamWriter) WriteBytes(v []byte) {
 
 func (dsw *defaultStreamWriter) EndWrite(end bool) error {
 	return (*defaultFrameWriter)(dsw).StreamEndWrite(end)
+}
+
+func (dsw *defaultStreamWriter) EndWriteCompressed() (err error) {
+	return (*defaultFrameWriter)(dsw).EndWriteCompressed()
 }

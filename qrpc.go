@@ -75,6 +75,11 @@ func (flg FrameFlag) ToNonCodec() FrameFlag {
 	return flg & ^CodecFlag
 }
 
+// ToCodec convert flg to codec flag
+func (flg FrameFlag) ToCodec() FrameFlag {
+	return flg | CodecFlag
+}
+
 // contextKey is a value for use with context.WithValue. It's used as
 // a pointer so it fits in an interface{} without allocation.
 type contextKey struct {

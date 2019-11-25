@@ -28,6 +28,7 @@ type FrameWriter interface {
 	StartWrite(requestID uint64, cmd Cmd, flags FrameFlag)
 	WriteBytes(v []byte) // v is copied in WriteBytes
 	EndWrite() error     // block until scheduled
+	EndWriteCompressed() error
 
 	ResetFrame(requestID uint64, reason Cmd) error
 }
@@ -38,6 +39,7 @@ type StreamWriter interface {
 	StartWrite(cmd Cmd)
 	WriteBytes(v []byte)     // v is copied in WriteBytes
 	EndWrite(end bool) error // block until scheduled
+	EndWriteCompressed() error
 }
 
 // A Handler responds to an qrpc request.
