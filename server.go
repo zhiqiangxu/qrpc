@@ -200,6 +200,11 @@ func (srv *Server) ListenAll() (err error) {
 	return
 }
 
+// BindingConfig for retrieve ServerBinding
+func (srv *Server) BindingConfig(idx int) ServerBinding {
+	return srv.bindings[idx]
+}
+
 // ServeAll for serve on all bindings
 func (srv *Server) ServeAll() error {
 	var g run.Group
