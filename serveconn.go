@@ -517,7 +517,9 @@ func (sc *serveconn) writeBuffers() error {
 	{
 		resultChan := writeBuffersChanPool.Get().(chan error)
 		err = sc.server.wp.run(func() {
+			cachedBuffs := sc.cachedBuffs
 			_, werr := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+			sc.cachedBuffs = cachedBuffs
 			resultChan <- werr
 		})
 
