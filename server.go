@@ -129,8 +129,6 @@ type Server struct {
 
 	wg sync.WaitGroup // wait group for goroutines
 
-	wp *workerPool
-
 	pushID uint64
 }
 
@@ -160,7 +158,6 @@ func NewServer(bindings []ServerBinding) *Server {
 		activeConn:       make([]sync.Map, len(bindings)),
 		throttle:         make([]atomic.Value, len(bindings)),
 		closeRateLimiter: closeRateLimiter,
-		wp:               newWorkerPool(),
 	}
 }
 
@@ -383,8 +380,8 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) (sc *serv
 		untrackedCh:    make(chan struct{}),
 		cs:             &ConnStreams{},
 		readFrameCh:    make(chan readFrameResult, srv.bindings[idx].ReadFrameChSize),
-		writeFrameCh:   make(chan writeFrameRequest, srv.bindings[idx].WriteFrameChSize),
-		cachedRequests: make([]writeFrameRequest, 0, srv.bindings[idx].WriteFrameChSize),
+		writeFrameCh:   make(chan *writeFrameRequest, srv.bindings[idx].WriteFrameChSize),
+		cachedRequests: make([]*writeFrameRequest, 0, srv.bindings[idx].WriteFrameChSize),
 		cachedBuffs:    make(net.Buffers, 0, srv.bindings[idx].WriteFrameChSize),
 		wlockCh:        make(chan struct{}, 1)}
 
@@ -495,9 +492,6 @@ func (srv *Server) Shutdown() error {
 	for _, f := range srv.shutdownFunc {
 		f()
 	}
-
-	// close worker pool
-	srv.wp.close()
 
 done:
 	srv.wg.Wait()

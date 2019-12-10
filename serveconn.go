@@ -45,12 +45,12 @@ type serveconn struct {
 	reader         *defaultFrameReader // used in conn.readFrames
 	writer         FrameWriter         // used by handlers
 	bytesWriter    *Writer
-	readFrameCh    chan readFrameResult   // written by conn.readFrames
-	writeFrameCh   chan writeFrameRequest // written by FrameWriter
+	readFrameCh    chan readFrameResult    // written by conn.readFrames
+	writeFrameCh   chan *writeFrameRequest // written by FrameWriter
 	inflight       int32
 	ridGen         uint64
 	wlockCh        chan struct{}
-	cachedRequests []writeFrameRequest
+	cachedRequests []*writeFrameRequest
 	cachedBuffs    net.Buffers
 
 	// modified by Server
@@ -391,8 +391,18 @@ func (sc *serveconn) getCodec() CompressorCodec {
 	return sc.server.bindings[sc.idx].Codec
 }
 
+var wfrPool = sync.Pool{New: func() interface{} {
+	return &writeFrameRequest{result: make(chan error, 1)}
+}}
+
 func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
-	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	wfr := wfrPool.Get().(*writeFrameRequest)
+	wfr.dfw = dfw
+	// just in case
+	if len(wfr.result) > 0 {
+		<-wfr.result
+	}
+
 	select {
 	case sc.writeFrameCh <- wfr:
 	case <-sc.ctx.Done():
@@ -406,7 +416,10 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 		if len(wfr.result) > 0 {
 			// already handled, release lock
 			<-sc.wlockCh
-			return <-wfr.result
+			err = <-wfr.result
+			wfr.dfw = nil
+			wfrPool.Put(wfr)
+			return
 		}
 
 		// check for reader quit, don't release wlock if reader quit
@@ -460,19 +473,20 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			releaseWlock = true
 		}
 
-		return <-wfr.result
+		err = <-wfr.result
+		wfr.dfw = nil
+		wfrPool.Put(wfr)
+		return
 
 	case err := <-wfr.result:
+		wfr.dfw = nil
+		wfrPool.Put(wfr)
 		return err
 	case <-sc.ctx.Done():
 		return sc.ctx.Err()
 	}
 
 }
-
-var writeBuffersChanPool = sync.Pool{New: func() interface{} {
-	return make(chan error, 1)
-}}
 
 func (sc *serveconn) writeBuffers() error {
 	if len(sc.cachedRequests) == 0 {
@@ -515,19 +529,9 @@ func (sc *serveconn) writeBuffers() error {
 
 	var err error
 	{
-		resultChan := writeBuffersChanPool.Get().(chan error)
-		err = sc.server.wp.run(func() {
-			cachedBuffs := sc.cachedBuffs
-			_, werr := sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
-			sc.cachedBuffs = cachedBuffs
-			resultChan <- werr
-		})
-
-		if err == nil {
-			err = <-resultChan
-		}
-
-		writeBuffersChanPool.Put(resultChan)
+		cachedBuffs := sc.cachedBuffs
+		_, err = sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+		sc.cachedBuffs = cachedBuffs
 	}
 
 	if err != nil {
@@ -560,7 +564,7 @@ func (sc *serveconn) writeBuffers() error {
 
 func (sc *serveconn) collectWriteFrames(batch int) error {
 	var (
-		res       writeFrameRequest
+		res       *writeFrameRequest
 		dfw       *defaultFrameWriter
 		flags     FrameFlag
 		requestID uint64

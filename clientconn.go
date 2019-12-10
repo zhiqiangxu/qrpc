@@ -27,7 +27,7 @@ type Connection struct {
 	conf       ConnectionConfig
 	subscriber SubFunc // there can be only one subscriber because of streamed frames
 
-	writeFrameCh chan writeFrameRequest // it's never closed so won't panic
+	writeFrameCh chan *writeFrameRequest // it's never closed so won't panic
 
 	idx int // modified in connect
 
@@ -50,7 +50,7 @@ type Connection struct {
 	loopBytesWriter *Writer
 	loopWG          *sync.WaitGroup
 
-	cachedRequests []writeFrameRequest
+	cachedRequests []*writeFrameRequest
 	cachedBuffs    net.Buffers
 
 	cs *ConnStreams
@@ -180,8 +180,8 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 
 	c := &Connection{
 		rwc: rwc, addrs: addr, conf: conf, subscriber: f,
-		writeFrameCh: make(chan writeFrameRequest, conf.WriteFrameChSize), respes: make(map[uint64]*response),
-		cachedRequests: make([]writeFrameRequest, 0, conf.WriteFrameChSize),
+		writeFrameCh: make(chan *writeFrameRequest, conf.WriteFrameChSize), respes: make(map[uint64]*response),
+		cachedRequests: make([]*writeFrameRequest, 0, conf.WriteFrameChSize),
 		cachedBuffs:    make(net.Buffers, 0, conf.WriteFrameChSize),
 		cs:             &ConnStreams{}, ctx: ctx, cancelCtx: cancelCtx,
 		reconnect: reconnect}
@@ -349,7 +349,13 @@ func (conn *Connection) getCodec() CompressorCodec {
 
 func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 
-	wfr := writeFrameRequest{dfw: dfw, result: make(chan error, 1)}
+	wfr := wfrPool.Get().(*writeFrameRequest)
+	wfr.dfw = dfw
+	// just in case
+	if len(wfr.result) > 0 {
+		<-wfr.result
+	}
+
 	loopCtx := conn.atomicLoopCtx()
 	select {
 	case conn.writeFrameCh <- wfr:
@@ -359,6 +365,8 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 
 	select {
 	case err := <-wfr.result:
+		wfr.dfw = nil
+		wfrPool.Put(wfr)
 		return err
 	case <-loopCtx.Done():
 		return loopCtx.Err()
@@ -539,7 +547,7 @@ func (conn *Connection) writeFrames() (err error) {
 func (conn *Connection) collectWriteFrames(batch int) error {
 
 	var (
-		res       writeFrameRequest
+		res       *writeFrameRequest
 		dfw       *defaultFrameWriter
 		flags     FrameFlag
 		requestID uint64
