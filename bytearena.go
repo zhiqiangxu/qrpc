@@ -3,7 +3,7 @@ package qrpc
 import "github.com/zhiqiangxu/util"
 
 const (
-	chunkSize = 512 * 1024 * 1024
+	chunkSize = 128 * 1024 * 1024
 )
 
 var byteArena = util.NewAtomicByteArena(chunkSize)

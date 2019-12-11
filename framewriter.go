@@ -24,8 +24,12 @@ type defaultFrameWriter struct {
 // DefaultWBufSize for default wbuf size
 var DefaultWBufSize = 1024
 
+const (
+	headerSize = 16
+)
+
 var fwPool = sync.Pool{New: func() interface{} {
-	return &defaultFrameWriter{wbuf: make([]byte, 0, DefaultWBufSize)}
+	return &defaultFrameWriter{wbuf: make([]byte, headerSize, DefaultWBufSize)}
 }}
 
 // newFrameWriter creates a FrameWriter instance to write frames
@@ -44,24 +48,9 @@ func (dfw *defaultFrameWriter) Finalize() {
 // StartWrite Write the FrameHeader.
 func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags FrameFlag) {
 
-	dfw.wbuf = append(dfw.wbuf[:0],
-		0, // 4 bytes of length, filled in in endWrite
-		0,
-		0,
-		0,
-		byte(requestID>>56),
-		byte(requestID>>48),
-		byte(requestID>>40),
-		byte(requestID>>32),
-		byte(requestID>>24),
-		byte(requestID>>16),
-		byte(requestID>>8),
-		byte(requestID),
-		byte(flags),
-		byte(cmd>>16),
-		byte(cmd>>8),
-		byte(cmd))
-
+	binary.BigEndian.PutUint64(dfw.wbuf[4:], requestID)
+	cmdAndFlags := uint32(flags)<<24 + uint32(cmd)&0xffffff
+	binary.BigEndian.PutUint32(dfw.wbuf[12:], cmdAndFlags)
 }
 
 func (dfw *defaultFrameWriter) Cmd() Cmd {
