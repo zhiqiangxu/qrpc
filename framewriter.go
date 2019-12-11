@@ -97,9 +97,7 @@ func (dfw *defaultFrameWriter) EndWrite() (err error) {
 	payloadLength := len(dfw.Payload())
 	if payloadLength == 0 {
 		dfw.SetFlags(dfw.Flags().ToNonCodec())
-	}
-
-	if dfw.Flags().IsCodec() {
+	} else if dfw.Flags().IsCodec() {
 		codec := dfw.fbw.getCodec()
 		if codec == nil {
 			err = ErrNoCodec
