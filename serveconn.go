@@ -136,7 +136,7 @@ func (sc *serveconn) serve() {
 		// connection level panic
 		if err := recover(); err != nil {
 			const size = 64 << 10
-			buf := byteArena.AllocBytes(size)
+			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
 			l.Error("connection panic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
 		}
@@ -218,7 +218,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 	if err != nil {
 
 		const size = 64 << 10
-		buf := byteArena.AllocBytes(size)
+		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
 		l.Error("handleRequestPanic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
 

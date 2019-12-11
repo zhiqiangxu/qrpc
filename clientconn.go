@@ -501,7 +501,7 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 	err := recover()
 	if err != nil {
 		const size = 64 << 10
-		buf := byteArena.AllocBytes(size)
+		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
 		l.Error("Connection.handleRequestPanic", zap.String("stack", String(buf)), zap.Any("err", err))
 	}

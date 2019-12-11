@@ -59,7 +59,7 @@ func (r *Reader) SetReadTimeout(timeout int) {
 
 // ReadUint32 read uint32 from socket
 func (r *Reader) ReadUint32() (uint32, error) {
-	bytes := byteArena.AllocBytes(4)
+	bytes := make([]byte, 4)
 	err := r.ReadBytes(bytes)
 	if err != nil {
 		return 0, err

@@ -102,7 +102,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	frame := &Frame{RequestID: requestID, Cmd: cmd, Flags: flags}
 
 	if size > 12 {
-		payload := byteArena.AllocBytes(int(size - 12))
+		payload := make([]byte, size-12)
 		err = dfr.ReadBytes(payload)
 		if err != nil {
 			return nil, err
