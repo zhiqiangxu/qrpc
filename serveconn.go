@@ -94,6 +94,11 @@ func (ci *ConnectionInfo) GetID() string {
 	return ci.id
 }
 
+// RemoteAddr returns the remote network address.
+func (ci *ConnectionInfo) RemoteAddr() string {
+	return ci.SC.RemoteAddr()
+}
+
 // NotifyWhenClose ensures f is called when connection is closed
 func (ci *ConnectionInfo) NotifyWhenClose(f func()) {
 	ci.l.Lock()
