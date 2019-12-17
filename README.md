@@ -11,6 +11,8 @@
 
 此外，`qrpc`还提供了`桥接网络`的特性，该特性使得多协议支持不费吹灰之力，同样的一套代码可以同时跑在`tcp`、`websocket`及任意已有的协议之下，详情参考`ws/README.md`；以及代码生成功能，使得服务的注册和调用极大地便利化，详情参考[`codegen demo`](https://github.com/zhiqiangxu/qrpc-demo/blob/master/codegen/main.go)。
 
+[这里](https://github.com/zhiqiangxu/qrpc/blob/master/doc/qrpc-夜读.pptx)是**ppt**版。
+
 ------
 
 # 协议设计
