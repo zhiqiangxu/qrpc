@@ -542,7 +542,10 @@ func (sc *serveconn) writeBuffers() error {
 	if err != nil {
 
 		l.Debug("serveconn.writeBuffers", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Error(err))
-		sc.Close()
+		// don't call sc.Close while inside OnKickCB
+		if atomic.LoadUint32(&sc.untrack) == 0 {
+			sc.Close()
+		}
 
 		if opErr, ok := err.(*net.OpError); ok {
 			err = opErr.Err
