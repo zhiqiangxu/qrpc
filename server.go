@@ -506,6 +506,7 @@ func (srv *Server) OnShutdown(f func()) {
 	if srv.done {
 		srv.mu.Unlock()
 		f()
+		return
 	}
 
 	srv.shutdownFunc = append(srv.shutdownFunc, f)
