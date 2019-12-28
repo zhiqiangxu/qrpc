@@ -94,6 +94,22 @@ func (ci *ConnectionInfo) GetID() string {
 	return ci.id
 }
 
+// SetID sets id and kicks previous id if exists
+func (ci *ConnectionInfo) SetID(id string) (bool, uint64) {
+	if id == "" {
+		panic("empty id not allowed")
+	}
+	ci.l.Lock()
+	if ci.id != "" {
+		ci.l.Unlock()
+		panic("SetID called twice")
+	}
+	ci.id = id
+	ci.l.Unlock()
+
+	return ci.SC.server.bindID(ci.SC, id)
+}
+
 // RemoteAddr returns the remote network address.
 func (ci *ConnectionInfo) RemoteAddr() string {
 	return ci.SC.RemoteAddr()
@@ -244,19 +260,9 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 
 // SetID sets id for serveconn
 func (sc *serveconn) SetID(id string) (bool, uint64) {
-	if id == "" {
-		panic("empty id not allowed")
-	}
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.l.Lock()
-	if ci.id != "" {
-		ci.l.Unlock()
-		panic("SetID called twice")
-	}
-	ci.id = id
-	ci.l.Unlock()
 
-	return sc.server.bindID(sc, id)
+	return ci.SetID(id)
 }
 
 func (sc *serveconn) GetID() string {
