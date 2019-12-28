@@ -110,6 +110,16 @@ func (ci *ConnectionInfo) SetID(id string) (bool, uint64) {
 	return ci.SC.server.bindID(ci.SC, id)
 }
 
+// ReaderConfig for change reader timeout
+type ReaderConfig interface {
+	SetReadTimeout(timeout int)
+}
+
+// ReaderConfig for change reader config
+func (ci *ConnectionInfo) ReaderConfig() ReaderConfig {
+	return ci.SC.reader
+}
+
 // RemoteAddr returns the remote network address.
 func (ci *ConnectionInfo) RemoteAddr() string {
 	return ci.SC.RemoteAddr()
@@ -132,16 +142,6 @@ func (ci *ConnectionInfo) NotifyWhenClose(f func()) {
 // Server returns the server
 func (sc *serveconn) Server() *Server {
 	return sc.server
-}
-
-// ReaderConfig for change timeout
-type ReaderConfig interface {
-	SetReadTimeout(timeout int)
-}
-
-// Reader returns the ReaderConfig
-func (sc *serveconn) Reader() ReaderConfig {
-	return sc.reader
 }
 
 func (sc *serveconn) RemoteAddr() string {
@@ -256,13 +256,6 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		}
 	}
 
-}
-
-// SetID sets id for serveconn
-func (sc *serveconn) SetID(id string) (bool, uint64) {
-	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-
-	return ci.SetID(id)
 }
 
 func (sc *serveconn) GetID() string {
