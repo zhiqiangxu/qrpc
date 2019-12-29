@@ -404,6 +404,8 @@ func startServerForCancel() {
 func TestClientHandler(t *testing.T) {
 	go startServerForClientHandler()
 
+	time.Sleep(time.Second)
+
 	conf := qrpc.ConnectionConfig{Handler: qrpc.HandlerFunc(func(w qrpc.FrameWriter, frame *qrpc.RequestFrame) {
 		w.StartWrite(frame.RequestID, ClientRespCmd, 0)
 		w.WriteBytes([]byte("client resp"))

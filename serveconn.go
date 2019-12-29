@@ -516,6 +516,9 @@ func (sc *serveconn) writeBuffers() error {
 			}
 			return ErrConnAlreadyClosed
 		}
+		if ci.respes == nil {
+			ci.respes = make(map[uint64]*response)
+		}
 		for _, idx := range targetIdx {
 			request := sc.cachedRequests[idx]
 			requestID := request.dfw.RequestID()
