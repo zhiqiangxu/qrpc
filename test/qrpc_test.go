@@ -434,7 +434,7 @@ func TestClientHandler(t *testing.T) {
 func startServerForClientHandler() {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
-		_, resp, _ := request.ConnectionInfo().SC.Request(ClientCmd, 0, nil)
+		_, resp, _ := request.ConnectionInfo().Request(ClientCmd, 0, nil)
 		frame, _ := resp.GetFrame()
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 		writer.WriteBytes(request.Payload)

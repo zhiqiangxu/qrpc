@@ -64,11 +64,11 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
+	*serveconn
 	l           sync.Mutex
 	closed      bool
 	id          string
 	closeNotify []func()
-	SC          *serveconn
 	anything    interface{}
 	respes      map[uint64]*response
 }
@@ -107,7 +107,7 @@ func (ci *ConnectionInfo) SetID(id string) (bool, uint64) {
 	ci.id = id
 	ci.l.Unlock()
 
-	return ci.SC.server.bindID(ci.SC, id)
+	return ci.serveconn.server.bindID(ci.serveconn, id)
 }
 
 // ReaderConfig for change reader timeout
@@ -117,12 +117,7 @@ type ReaderConfig interface {
 
 // ReaderConfig for change reader config
 func (ci *ConnectionInfo) ReaderConfig() ReaderConfig {
-	return ci.SC.reader
-}
-
-// RemoteAddr returns the remote network address.
-func (ci *ConnectionInfo) RemoteAddr() string {
-	return ci.SC.RemoteAddr()
+	return ci.serveconn.reader
 }
 
 // NotifyWhenClose ensures f is called when connection is closed

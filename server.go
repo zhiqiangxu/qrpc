@@ -386,7 +386,7 @@ func (srv *Server) newConn(ctx context.Context, rwc net.Conn, idx int) (sc *serv
 		wlockCh:        make(chan struct{}, 1)}
 
 	ctx, cancelCtx := context.WithCancel(ctx)
-	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{SC: sc})
+	ctx = context.WithValue(ctx, ConnectionInfoKey, &ConnectionInfo{serveconn: sc})
 
 	sc.cancelCtx = cancelCtx
 	sc.ctx = ctx
