@@ -65,7 +65,7 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
 	*serveconn
-	l           sync.Mutex
+	l           sync.RWMutex
 	closed      bool
 	id          string
 	closeNotify []func()
@@ -75,8 +75,8 @@ type ConnectionInfo struct {
 
 // GetAnything returns anything
 func (ci *ConnectionInfo) GetAnything() interface{} {
-	ci.l.Lock()
-	defer ci.l.Unlock()
+	ci.l.RLock()
+	defer ci.l.RUnlock()
 	return ci.anything
 }
 
@@ -89,8 +89,8 @@ func (ci *ConnectionInfo) SetAnything(anything interface{}) {
 
 // GetID returns the ID
 func (ci *ConnectionInfo) GetID() string {
-	ci.l.Lock()
-	defer ci.l.Unlock()
+	ci.l.RLock()
+	defer ci.l.RUnlock()
 	return ci.id
 }
 
