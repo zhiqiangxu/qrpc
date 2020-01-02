@@ -4,6 +4,7 @@ go 1.12
 
 require (
 	github.com/go-kit/kit v0.9.0
+	github.com/gogo/protobuf v1.3.1
 	github.com/gorilla/websocket v1.4.1
 	github.com/oklog/run v1.0.0
 	github.com/zhiqiangxu/go-reuseport v0.2.1
