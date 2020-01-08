@@ -74,7 +74,7 @@ func (cs *ConnStreams) Release() {
 // Stream is like session within one requestID
 type Stream struct {
 	ID         uint64
-	frameCh    chan *Frame // always not nil
+	frameCh    chan *Frame // always not nil, closed when peer is done
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 
