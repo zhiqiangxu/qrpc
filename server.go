@@ -521,12 +521,12 @@ func (srv *Server) GetPushID() uint64 {
 }
 
 // WalkConnByID iterates over  serveconn by ids
-func (srv *Server) WalkConnByID(idx int, ids []string, f func(FrameWriter, *ConnectionInfo)) {
-	for _, id := range ids {
+func (srv *Server) WalkConnByID(idx int, ids []string, f func(FrameWriter, *ConnectionInfo, int)) {
+	for i, id := range ids {
 		v, ok := srv.id2Conn[idx].Load(id)
 		if ok {
 			sc := v.(*serveconn)
-			f(v.(*serveconn).GetWriter(), sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo))
+			f(v.(*serveconn).GetWriter(), sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo), i)
 		}
 	}
 }
