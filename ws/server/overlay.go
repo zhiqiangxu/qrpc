@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"net/http"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/zhiqiangxu/qrpc"
@@ -26,7 +25,6 @@ type qrpcOverWS struct {
 	acceptCh   chan *websocket.Conn
 	ctx        context.Context
 	cancelFunc context.CancelFunc
-	deadLine   time.Time
 }
 
 var upgrader = websocket.Upgrader{
@@ -73,30 +71,13 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 }
 
 func (o *qrpcOverWS) Accept() (conn net.Conn, err error) {
-	switch {
-	case o.deadLine.IsZero():
-		select {
-		case c := <-o.acceptCh:
-			conn = NewConn(c)
-			return
-		case <-o.ctx.Done():
-			err = o.ctx.Err()
-			return
-		}
-	default:
-		ctx, cancelFunc := context.WithDeadline(context.Background(), o.deadLine)
-		defer cancelFunc()
-		select {
-		case c := <-o.acceptCh:
-			conn = NewConn(c)
-			return
-		case <-o.ctx.Done():
-			err = o.ctx.Err()
-			return
-		case <-ctx.Done():
-			err = qrpc.ErrAcceptTimedout
-			return
-		}
+	select {
+	case c := <-o.acceptCh:
+		conn = NewConn(c)
+		return
+	case <-o.ctx.Done():
+		err = o.ctx.Err()
+		return
 	}
 }
 
@@ -107,9 +88,4 @@ func (o *qrpcOverWS) Close() error {
 
 func (o *qrpcOverWS) Addr() (addr net.Addr) {
 	return o.l.Addr()
-}
-
-func (o *qrpcOverWS) SetDeadline(t time.Time) error {
-	o.deadLine = t
-	return nil
 }

@@ -223,7 +223,6 @@ func (srv *Server) ServeAll() error {
 // Listener defines required listener methods for qrpc
 type Listener interface {
 	net.Listener
-	SetDeadline(t time.Time) error
 }
 
 var (
@@ -235,8 +234,6 @@ var (
 	ErrListenerAcceptReturnType = errors.New("qrpc: Listener.Accept doesn't return TCPConn")
 	// ErrAcceptTimedout when accept timed out
 	ErrAcceptTimedout = errors.New("qrpc: accept timed out")
-
-	defaultAcceptTimeout = 5 * time.Second
 )
 
 // Serve accepts incoming connections on the Listener qrpcListener, creating a
@@ -279,7 +276,6 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 	defer cancelFunc()
 	for {
 		srv.waitThrottle(idx, srv.doneChan)
-		ln.SetDeadline(time.Now().Add(defaultAcceptTimeout))
 		rw, e := ln.Accept()
 		if e != nil {
 			select {
