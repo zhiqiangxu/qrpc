@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 
@@ -15,14 +16,15 @@ const (
 )
 
 // OverlayNetwork impl the overlay network for ws
-func OverlayNetwork(l net.Listener) qrpc.Listener {
-	return newOverlay(l)
+func OverlayNetwork(l net.Listener, tlsConfig *tls.Config) qrpc.Listener {
+	return newOverlay(l, tlsConfig)
 }
 
 type qrpcOverWS struct {
 	l          net.Listener
 	httpServer *http.Server
 	acceptCh   chan *websocket.Conn
+	tlsConfig  *tls.Config
 	ctx        context.Context
 	cancelFunc context.CancelFunc
 }
@@ -34,7 +36,11 @@ var upgrader = websocket.Upgrader{
 	Subprotocols: []string{"null"},
 }
 
-func newOverlay(l net.Listener) (o *qrpcOverWS) {
+func newOverlay(l net.Listener, tlsConfig *tls.Config) (o *qrpcOverWS) {
+
+	if tlsConfig != nil {
+		l = tls.NewListener(l, tlsConfig)
+	}
 
 	mux := &http.ServeMux{}
 	mux.HandleFunc("/qrpc", func(w http.ResponseWriter, r *http.Request) {
@@ -58,6 +64,7 @@ func newOverlay(l net.Listener) (o *qrpcOverWS) {
 		l:          l,
 		httpServer: httpServer,
 		acceptCh:   make(chan *websocket.Conn, backlog),
+		tlsConfig:  tlsConfig,
 		ctx:        ctx,
 		cancelFunc: cancelFunc,
 	}

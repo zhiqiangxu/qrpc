@@ -2,6 +2,7 @@ package qrpc
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	mathrand "math/rand"
 	"net"
@@ -98,9 +99,9 @@ func (r *response) Close() {
 func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (conn *Connection, err error) {
 	var rwc net.Conn
 	if conf.OverlayNetwork != nil {
-		rwc, err = conf.OverlayNetwork(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
+		rwc, err = conf.OverlayNetwork(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize, TLSConf: conf.TLSConf})
 	} else {
-		rwc, err = dialTCP(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
+		rwc, err = dialTCP(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize, TLSConf: conf.TLSConf})
 	}
 
 	if err != nil {
@@ -135,6 +136,17 @@ func dialTCP(addr string, dialConfig DialConfig) (rwc net.Conn, err error) {
 		if sockOptErr != nil {
 			l.Error("SetWriteBuffer", zap.Int("WBufSize", dialConfig.WBufSize), zap.Error(sockOptErr))
 		}
+	}
+
+	if dialConfig.TLSConf != nil {
+		tlsConn := tls.Client(rwc, dialConfig.TLSConf)
+		err = tlsConn.Handshake()
+		if err != nil {
+			rwc.Close()
+			return
+		}
+
+		rwc = tlsConn
 	}
 
 	return

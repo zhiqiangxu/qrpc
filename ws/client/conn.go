@@ -44,8 +44,14 @@ func DialConn(address string, dialConfig qrpc.DialConfig) (nc net.Conn, err erro
 			}
 			return
 		},
+		TLSClientConfig: dialConfig.TLSConf,
 	}
-	wc, resp, err = dialer.Dial("ws://"+address+"/qrpc", http.Header{})
+	if dialConfig.TLSConf != nil {
+		wc, resp, err = dialer.Dial("wss://"+address+"/qrpc", http.Header{})
+	} else {
+		wc, resp, err = dialer.Dial("ws://"+address+"/qrpc", http.Header{})
+	}
+
 	if err != nil {
 		qrpc.Logger().Error("dialer.Dial", zap.Any("resp", resp), zap.Error(err))
 		return

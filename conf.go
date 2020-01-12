@@ -4,6 +4,8 @@ import (
 	"net"
 	"time"
 
+	"crypto/tls"
+
 	"github.com/go-kit/kit/metrics"
 )
 
@@ -28,10 +30,11 @@ type ServerBinding struct {
 	MaxCloseRate        int // per second
 	ListenFunc          func(network, address string) (net.Listener, error)
 	Codec               CompressorCodec
-	OverlayNetwork      func(net.Listener) Listener
+	OverlayNetwork      func(net.Listener, *tls.Config) Listener
 	OnKickCB            func(w FrameWriter)
 	LatencyMetric       metrics.Histogram
 	CounterMetric       metrics.Counter
+	TLSConf             *tls.Config
 	ln                  Listener
 }
 
@@ -49,6 +52,7 @@ type ConnectionConfig struct {
 	Handler          Handler
 	OverlayNetwork   func(address string, dialConfig DialConfig) (net.Conn, error)
 	Codec            CompressorCodec
+	TLSConf          *tls.Config
 }
 
 // DialConfig for dial
@@ -56,4 +60,5 @@ type DialConfig struct {
 	DialTimeout time.Duration
 	WBufSize    int // best effort only, check log for error
 	RBufSize    int // best effort only, check log for error
+	TLSConf     *tls.Config
 }

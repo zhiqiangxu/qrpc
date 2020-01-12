@@ -2,6 +2,7 @@ package qrpc
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -188,9 +189,14 @@ func (srv *Server) ListenAll() (err error) {
 		}
 
 		if binding.OverlayNetwork != nil {
-			srv.bindings[i].ln = binding.OverlayNetwork(ln)
+			srv.bindings[i].ln = binding.OverlayNetwork(ln, srv.bindings[i].TLSConf)
 		} else {
-			srv.bindings[i].ln = ln.(*net.TCPListener)
+			if srv.bindings[i].TLSConf != nil {
+				srv.bindings[i].ln = tls.NewListener(ln.(*net.TCPListener), srv.bindings[i].TLSConf)
+			} else {
+				srv.bindings[i].ln = ln.(*net.TCPListener)
+			}
+
 		}
 	}
 
