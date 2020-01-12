@@ -232,8 +232,6 @@ var (
 	ErrServerClosed = errors.New("qrpc: Server closed")
 	// ErrListenerAcceptReturnType when Listener.Accept doesn't return TCPConn
 	ErrListenerAcceptReturnType = errors.New("qrpc: Listener.Accept doesn't return TCPConn")
-	// ErrAcceptTimedout when accept timed out
-	ErrAcceptTimedout = errors.New("qrpc: accept timed out")
 )
 
 // Serve accepts incoming connections on the Listener qrpcListener, creating a
@@ -282,14 +280,6 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 			case <-srv.doneChan:
 				return ErrServerClosed
 			default:
-			}
-			if e == ErrAcceptTimedout {
-				// for overlay network
-				continue
-			}
-			if opError, ok := e.(*net.OpError); ok && opError.Timeout() {
-				// don't log the scheduled timeout
-				continue
 			}
 			if ne, ok := e.(net.Error); ok && ne.Temporary() {
 				if tempDelay == 0 {
