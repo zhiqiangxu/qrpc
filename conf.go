@@ -62,3 +62,10 @@ type DialConfig struct {
 	RBufSize    int // best effort only, check log for error
 	TLSConf     *tls.Config
 }
+
+// KeepAliveListenerConfig is config for KeepAliveListener
+type KeepAliveListenerConfig struct {
+	KeepAliveDuration time.Duration
+	WriteBufferSize   int
+	ReadBufferSize    int
+}

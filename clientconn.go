@@ -120,10 +120,6 @@ func dialTCP(addr string, dialConfig DialConfig) (rwc net.Conn, err error) {
 		return
 	}
 
-	if dialConfig.RBufSize <= 0 && dialConfig.WBufSize <= 0 {
-		return
-	}
-
 	tc := rwc.(*net.TCPConn)
 	if dialConfig.RBufSize > 0 {
 		sockOptErr := tc.SetReadBuffer(dialConfig.RBufSize)

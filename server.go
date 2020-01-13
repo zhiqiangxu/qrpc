@@ -172,6 +172,12 @@ func (srv *Server) ListenAndServe() (err error) {
 	return srv.ServeAll()
 }
 
+const (
+	// DefaultKeepAliveDuration for keep alive duration
+	// TODO make it configurable
+	DefaultKeepAliveDuration = 20 * time.Second
+)
+
 // ListenAll for listen on all bindings
 func (srv *Server) ListenAll() (err error) {
 
@@ -188,13 +194,26 @@ func (srv *Server) ListenAll() (err error) {
 			return
 		}
 
+		kalConf := KeepAliveListenerConfig{
+			KeepAliveDuration: DefaultKeepAliveDuration,
+			WriteBufferSize:   binding.WBufSize,
+			ReadBufferSize:    binding.RBufSize,
+		}
+		kal := TCPKeepAliveListener{
+			Listener: ln,
+			Conf:     kalConf}
+
 		if binding.OverlayNetwork != nil {
-			srv.bindings[i].ln = binding.OverlayNetwork(ln, srv.bindings[i].TLSConf)
+			srv.bindings[i].ln = binding.OverlayNetwork(&kal, srv.bindings[i].TLSConf)
 		} else {
+
 			if srv.bindings[i].TLSConf != nil {
-				srv.bindings[i].ln = tls.NewListener(ln.(*net.TCPListener), srv.bindings[i].TLSConf)
+				srv.bindings[i].ln = &TLSKeepAliveListener{
+					TCPKeepAliveListener: kal,
+					TLSConfig:            srv.bindings[i].TLSConf,
+				}
 			} else {
-				srv.bindings[i].ln = ln.(*net.TCPListener)
+				srv.bindings[i].ln = &kal
 			}
 
 		}
@@ -240,36 +259,14 @@ var (
 	ErrListenerAcceptReturnType = errors.New("qrpc: Listener.Accept doesn't return TCPConn")
 )
 
-// Serve accepts incoming connections on the Listener qrpcListener, creating a
+// Serve accepts incoming connections on the Listener ln, creating a
 // new service goroutine for each. The service goroutines read requests and
 // then call srv.Handler to reply to them.
 //
 // Serve always returns a non-nil error. After Shutdown or Close, the
 // returned error is ErrServerClosed.
-func (srv *Server) Serve(qrpcListener Listener, idx int) error {
+func (srv *Server) Serve(ln Listener, idx int) error {
 
-	var applyConnOpts func(TCPConn)
-	if srv.bindings[idx].WBufSize > 0 || srv.bindings[idx].RBufSize > 0 {
-		wbufSize := srv.bindings[idx].WBufSize
-		rbufSize := srv.bindings[idx].RBufSize
-		applyConnOpts = func(tc TCPConn) {
-			if wbufSize > 0 {
-				sockOptErr := tc.SetWriteBuffer(wbufSize)
-				if sockOptErr != nil {
-					l.Error("SetWriteBuffer", zap.Int("wbufSize", wbufSize), zap.Error(sockOptErr))
-				}
-			}
-			if rbufSize > 0 {
-				sockOptErr := tc.SetReadBuffer(rbufSize)
-				if sockOptErr != nil {
-					l.Error("SetReadBuffer", zap.Int("rbufSize", rbufSize), zap.Error(sockOptErr))
-				}
-			}
-		}
-	}
-	ln := tcpKeepAliveListener{
-		Listener:      qrpcListener,
-		applyConnOpts: applyConnOpts}
 	defer ln.Close()
 	var tempDelay time.Duration // how long to sleep on accept failure
 
@@ -313,11 +310,11 @@ func (srv *Server) Serve(qrpcListener Listener, idx int) error {
 	}
 }
 
-// tcpKeepAliveListener sets TCP keep-alive timeouts on accepted
+// TCPKeepAliveListener sets TCP keep-alive timeouts on accepted
 // connections.
-type tcpKeepAliveListener struct {
+type TCPKeepAliveListener struct {
 	Listener
-	applyConnOpts func(TCPConn)
+	Conf KeepAliveListenerConfig
 }
 
 // TCPConn in qrpc's aspect
@@ -329,7 +326,25 @@ type TCPConn interface {
 	SetReadBuffer(bytes int) error
 }
 
-func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
+// TLSKeepAliveListener for methods in the set of TCPConn-net.Conn
+type TLSKeepAliveListener struct {
+	TCPKeepAliveListener // embed directly for better locality
+	TLSConfig            *tls.Config
+}
+
+// Accept returns a tls wrapped net.Conn
+func (tlsln *TLSKeepAliveListener) Accept() (c net.Conn, err error) {
+	c, err = tlsln.TCPKeepAliveListener.Accept()
+	if err != nil {
+		return
+	}
+
+	c = tls.Server(c, tlsln.TLSConfig)
+	return
+}
+
+// Accept returns a keepalived net.Conn
+func (ln *TCPKeepAliveListener) Accept() (c net.Conn, err error) {
 	c, err = ln.Listener.Accept()
 	if err != nil {
 		return
@@ -344,10 +359,21 @@ func (ln tcpKeepAliveListener) Accept() (c net.Conn, err error) {
 		return
 	}
 
-	tc.SetKeepAlive(true)
-	tc.SetKeepAlivePeriod(20 * time.Second)
-	if ln.applyConnOpts != nil {
-		ln.applyConnOpts(tc)
+	if ln.Conf.KeepAliveDuration > 0 {
+		tc.SetKeepAlive(true)
+		tc.SetKeepAlivePeriod(ln.Conf.KeepAliveDuration)
+	}
+	if ln.Conf.WriteBufferSize > 0 {
+		sockOptErr := tc.SetWriteBuffer(ln.Conf.WriteBufferSize)
+		if sockOptErr != nil {
+			l.Error("SetWriteBuffer", zap.Int("wbufSize", ln.Conf.WriteBufferSize), zap.Error(sockOptErr))
+		}
+	}
+	if ln.Conf.ReadBufferSize > 0 {
+		sockOptErr := tc.SetReadBuffer(ln.Conf.ReadBufferSize)
+		if sockOptErr != nil {
+			l.Error("SetReadBuffer", zap.Int("rbufSize", ln.Conf.ReadBufferSize), zap.Error(sockOptErr))
+		}
 	}
 
 	return
