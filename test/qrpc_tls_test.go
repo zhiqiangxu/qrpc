@@ -19,6 +19,7 @@ import (
 func TestTLS(t *testing.T) {
 	go startTLSServer()
 	time.Sleep(time.Second)
+	// 唯一的不同，是传入TLSConf
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{TLSConf: clientTLSConfig()}, nil)
 	if err != nil {
 		panic(err)
@@ -37,6 +38,7 @@ func TestTLS(t *testing.T) {
 func TestWSTLS(t *testing.T) {
 	go startWSTLSServer()
 	time.Sleep(time.Second)
+	// 唯一的不同，是传入TLSConf
 	conn, err := client.NewConnection(addr, qrpc.ConnectionConfig{TLSConf: clientTLSConfig()}, nil)
 	if err != nil {
 		panic(err)
@@ -114,6 +116,7 @@ func startTLSServer() {
 			panic(err)
 		}
 	})
+	// 唯一的不同，是传入TLSConf
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := qrpc.NewServer(bindings)
@@ -135,6 +138,7 @@ func startWSTLSServer() {
 			panic(err)
 		}
 	})
+	// 唯一的不同，是传入TLSConf
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := wsserver.New(bindings)
