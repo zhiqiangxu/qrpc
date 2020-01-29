@@ -540,7 +540,7 @@ func (sc *serveconn) writeBuffers() error {
 
 		l.Debug("serveconn.writeBuffers", zap.Uintptr("sc", uintptr(unsafe.Pointer(sc))), zap.Error(err))
 		// don't call sc.Close while inside OnKickCB
-		if atomic.LoadUint32(&sc.untrack) == 0 {
+		if !sc.IsClosed() {
 			sc.Close()
 		}
 
@@ -640,14 +640,30 @@ func (sc *serveconn) Request(cmd Cmd, flags FrameFlag, payload []byte) (uint64, 
 	return requestID, resp, err
 }
 
+// StreamRequest is for streamed request
+func (sc *serveconn) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error) {
+
+	flags = flags.ToStream()
+	_, resp, writer, err := sc.writeFirstFrame(cmd, flags, payload)
+	if err != nil {
+		l.Error("StreamRequest writeFirstFrame", zap.Error(err))
+		return nil, nil, err
+	}
+	return (*defaultStreamWriter)(writer), resp, nil
+}
+
 func (sc *serveconn) nextRequestID() uint64 {
 	ridGen := atomic.AddUint64(&sc.ridGen, 1)
 	return 2 * ridGen
 }
 
+func (sc *serveconn) IsClosed() bool {
+	return atomic.LoadUint32(&sc.untrack) != 0
+}
+
 func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (uint64, Response, *defaultFrameWriter, error) {
 
-	if atomic.LoadUint32(&sc.untrack) != 0 {
+	if sc.IsClosed() {
 		return 0, nil, nil, ErrConnAlreadyClosed
 	}
 

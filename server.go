@@ -41,6 +41,7 @@ type StreamWriter interface {
 	WriteBytes(v []byte)     // v is copied in WriteBytes
 	EndWrite(end bool) error // block until scheduled
 	EndWriteCompressed() error
+	ResetFrame(reason Cmd) error
 }
 
 // A Handler responds to an qrpc request.
@@ -86,13 +87,13 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFu
 	if handler == nil {
 		panic("qrpc: nil handler")
 	}
+	if mux.m == nil {
+		mux.m = make(map[Cmd]Handler)
+	}
 	if _, exist := mux.m[cmd]; exist {
 		panic("qrpc: multiple registrations for " + string(cmd))
 	}
 
-	if mux.m == nil {
-		mux.m = make(map[Cmd]Handler)
-	}
 	mux.m[cmd] = HandlerWithMW(handler, middleware...)
 }
 

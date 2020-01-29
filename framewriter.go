@@ -201,3 +201,10 @@ func (dsw *defaultStreamWriter) EndWrite(end bool) error {
 func (dsw *defaultStreamWriter) EndWriteCompressed() (err error) {
 	return (*defaultFrameWriter)(dsw).EndWriteCompressed()
 }
+
+func (dsw *defaultStreamWriter) ResetFrame(reason Cmd) (err error) {
+	dfw := (*defaultFrameWriter)(dsw)
+	err = dfw.ResetFrame(dfw.RequestID(), reason)
+	return
+
+}
