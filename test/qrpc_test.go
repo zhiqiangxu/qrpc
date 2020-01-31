@@ -16,6 +16,7 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/zhiqiangxu/qrpc"
+	"github.com/zhiqiangxu/qrpc/channel"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
@@ -323,6 +324,8 @@ const (
 	HelloRespCmd
 	ClientCmd
 	ClientRespCmd
+	ChannelCmd
+	ChannelRespCmd
 )
 
 func startServer() {
@@ -443,6 +446,94 @@ func startServerForClientHandler() {
 	})
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+	server := qrpc.NewServer(bindings)
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Println("ListenAndServe", err)
+		panic(err)
+	}
+}
+
+func TestChannelStyle(t *testing.T) {
+
+	go startServerForChannel()
+
+	time.Sleep(time.Millisecond * 100)
+
+	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	transport := channel.NewClientTransport(conn)
+	sender, receiver, err := transport.Pipe()
+	if err != nil {
+		panic(err)
+	}
+
+	ctx := context.Background()
+	msg1 := "hello channel1"
+	err = sender.Send(ctx, ChannelCmd, msg1, false)
+	if err != nil {
+		panic(err)
+	}
+	msg2 := "hello channel2"
+	err = sender.Send(ctx, ChannelCmd, msg2, false)
+	if err != nil {
+		panic(err)
+	}
+	var (
+		cmd  qrpc.Cmd
+		resp string
+	)
+	err = receiver.Receive(ctx, &cmd, &resp)
+	if err != nil {
+		panic(err)
+	}
+	if resp != msg1 {
+		t.Fatalf("resp!=msg1")
+	}
+	err = receiver.Receive(ctx, &cmd, &resp)
+	if err != nil {
+		panic(err)
+	}
+	if resp != msg2 {
+		t.Fatalf("resp!=msg2")
+	}
+	err = sender.End()
+	if err != nil {
+		panic(err)
+	}
+	err = receiver.Receive(ctx, &cmd, &resp)
+	if err != channel.ErrStreamFinished {
+		t.Fatalf("err != channel.ErrStreamFinished")
+	}
+}
+
+func startServerForChannel() {
+	mux := qrpc.NewServeMux()
+	mux.Handle(ChannelCmd, channel.NewQRPCHandler(channel.HandlerFunc(func(s channel.Sender, r channel.Receiver, t channel.Transport) {
+		var (
+			cmd qrpc.Cmd
+			req string
+		)
+		ctx := context.TODO()
+
+		for {
+			err := r.Receive(ctx, &cmd, &req)
+			if err != nil {
+				if err != channel.ErrStreamFinished {
+					panic(fmt.Sprintf("Receive:%v", err))
+				}
+				err = s.End()
+				break
+			}
+			s.Send(ctx, ChannelRespCmd, req, false)
+		}
+
+	})))
+	bindings := []qrpc.ServerBinding{
+		qrpc.ServerBinding{Addr: addr, Handler: mux}}
 	server := qrpc.NewServer(bindings)
 	err := server.ListenAndServe()
 	if err != nil {

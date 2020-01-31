@@ -168,10 +168,12 @@ func (s *Stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 	isRst := flags.IsRst()
 
 	if isRst {
+		if atomic.LoadInt32(&s.closedSelf) != 0 {
+			return false
+		}
 		atomic.StoreInt32(&s.closedSelf, 1)
 		if atomic.LoadInt32(&s.closedPeer) != 0 {
 			s.afterDone()
-			return false
 		}
 		return true
 	}

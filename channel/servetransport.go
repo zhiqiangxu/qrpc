@@ -28,13 +28,13 @@ type (
 	}
 )
 
-// ServeQRPC calls f(s, r, t).
-func (f HandlerFunc) ServeQRPC(s Sender, r Receiver, t Transport) {
+// ServeSRT implements channel.Handler for HandlerFunc.
+func (f HandlerFunc) ServeSRT(s Sender, r Receiver, t Transport) {
 	f(s, r, t)
 }
 
-// NewServeHandler is ctor for ServeHandler
-func NewServeHandler(handler Handler) qrpc.Handler {
+// NewQRPCHandler is ctor for ServeHandler
+func NewQRPCHandler(handler Handler) qrpc.Handler {
 	return &ServeHandler{handler: handler}
 }
 
@@ -51,9 +51,9 @@ func (s *serveSender) Send(ctx context.Context, cmd qrpc.Cmd, msg interface{}, e
 		return
 	}
 
-	var flag qrpc.FrameFlag
+	flag := qrpc.StreamFlag
 	if end {
-		flag = qrpc.StreamEndFlag
+		flag |= qrpc.StreamEndFlag
 	}
 
 	s.w.StartWrite(s.frame.RequestID, cmd, flag)
@@ -87,7 +87,7 @@ func (r *serveReceiver) Receive(ctx context.Context, cmd *qrpc.Cmd, msg interfac
 
 	if cmd != nil {
 		*cmd = frame.Cmd
-		err = Unmarshal(r.frame.Payload, msg)
+		err = Unmarshal(frame.Payload, msg)
 	}
 	return
 }

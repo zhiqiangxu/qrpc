@@ -75,9 +75,9 @@ func (s *clientSender) Send(ctx context.Context, cmd qrpc.Cmd, msg interface{}, 
 		return
 	}
 
-	var flag qrpc.FrameFlag
+	flag := qrpc.StreamFlag
 	if end {
-		flag = qrpc.StreamEndFlag
+		flag |= qrpc.StreamEndFlag
 	}
 	if s.streamWriter == nil {
 		s.streamWriter, s.resp, err = s.t.c.StreamRequest(cmd, flag, bytes)
@@ -116,8 +116,10 @@ func (s *clientSender) getFrame(ctx context.Context) (frame *qrpc.Frame, err err
 		return
 	}
 
-	if s.firstFrame != nil {
-
+	if s.firstFrame == nil {
+		frame, err = s.resp.GetFrameWithContext(ctx)
+		s.firstFrame = frame
+	} else {
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
@@ -130,8 +132,6 @@ func (s *clientSender) getFrame(ctx context.Context) (frame *qrpc.Frame, err err
 			return
 		}
 	}
-	frame, err = s.resp.GetFrameWithContext(ctx)
-	s.firstFrame = frame
 
 	return
 }
