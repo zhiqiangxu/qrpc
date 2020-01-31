@@ -490,15 +490,15 @@ func TestChannelStyle(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	if resp != msg1 {
-		t.Fatalf("resp!=msg1")
+	if cmd != ChannelRespCmd || resp != msg1 {
+		t.Fatalf("cmd != ChannelRespCmd || resp!=msg1")
 	}
 	err = receiver.Receive(ctx, &cmd, &resp)
 	if err != nil {
 		panic(err)
 	}
-	if resp != msg2 {
-		t.Fatalf("resp!=msg2")
+	if cmd != ChannelRespCmd || resp != msg2 {
+		t.Fatalf("cmd != ChannelRespCmd || resp!=msg2")
 	}
 	err = sender.End()
 	if err != nil {
