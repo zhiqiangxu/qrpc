@@ -94,3 +94,19 @@ func (r *RequestFrame) Context() context.Context {
 func (r *RequestFrame) FrameCh() <-chan *Frame {
 	return (*Frame)(r).FrameCh()
 }
+
+// StreamInitiator for stream initiating side, may also be from server side
+type StreamInitiator interface {
+	StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error)
+	IsClosed() bool
+}
+
+// StreamInitiator returns the underlying StreamInitiator
+func (r *RequestFrame) StreamInitiator() StreamInitiator {
+	ci, ok := r.Stream.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
+	if ok {
+		return ci.serveconn
+	}
+	cci := r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
+	return cci.CC
+}
