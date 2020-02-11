@@ -283,7 +283,7 @@ func main() {
         var (
             wg    sync.WaitGroup
         )
-        qserver := request.ConnectionInfo().SC.Server()
+        qserver := request.ConnectionInfo().Server()
         pushID := qserver.GetPushID()
         // 遍历所有长链接
         qserver.WalkConn(0, func(writer qrpc.FrameWriter, ci *qrpc.ConnectionInfo) bool {

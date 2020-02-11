@@ -213,7 +213,7 @@ func main() {
         var (
             wg    sync.WaitGroup
         )
-        qserver := request.ConnectionInfo().SC.Server()
+        qserver := request.ConnectionInfo().Server()
         pushID := qserver.GetPushID()
         qserver.WalkConn(0, func(writer qrpc.FrameWriter, ci *qrpc.ConnectionInfo) bool {
             qrpc.GoFunc(&wg, func() {
