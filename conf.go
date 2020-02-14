@@ -18,24 +18,25 @@ type CompressorCodec interface {
 
 // ServerBinding contains binding infos
 type ServerBinding struct {
-	Addr                string
-	Handler             Handler // handler to invoke
-	DefaultReadTimeout  int
-	DefaultWriteTimeout int
-	WBufSize            int // best effort only, check log for error
-	RBufSize            int // best effort only, check log for error
-	ReadFrameChSize     int
-	WriteFrameChSize    int
-	MaxFrameSize        int
-	MaxCloseRate        int // per second
-	ListenFunc          func(network, address string) (net.Listener, error)
-	Codec               CompressorCodec
-	OverlayNetwork      func(net.Listener, *tls.Config) Listener
-	OnKickCB            func(w FrameWriter)
-	LatencyMetric       metrics.Histogram
-	CounterMetric       metrics.Counter
-	TLSConf             *tls.Config
-	ln                  Listener
+	Addr                             string
+	Handler                          Handler // handler to invoke
+	DefaultReadTimeout               int
+	DefaultWriteTimeout              int
+	WBufSize                         int // best effort only, check log for error
+	RBufSize                         int // best effort only, check log for error
+	ReadFrameChSize                  int
+	WriteFrameChSize                 int
+	MaxFrameSize                     int
+	MaxCloseRate                     int   // per second
+	MaxInboundInflightStreamsPerConn int32 // connection will be closed when exceeded
+	ListenFunc                       func(network, address string) (net.Listener, error)
+	Codec                            CompressorCodec
+	OverlayNetwork                   func(net.Listener, *tls.Config) Listener
+	OnKickCB                         func(w FrameWriter)
+	LatencyMetric                    metrics.Histogram
+	CounterMetric                    metrics.Counter
+	TLSConf                          *tls.Config
+	ln                               Listener
 }
 
 // SubFunc for subscribe callback

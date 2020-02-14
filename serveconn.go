@@ -161,14 +161,16 @@ func (sc *serveconn) serve() {
 	}()
 
 	binding := sc.server.bindings[idx]
-	var maxFrameSize int
-	if binding.MaxFrameSize > 0 {
-		maxFrameSize = binding.MaxFrameSize
-	} else {
-		maxFrameSize = DefaultMaxFrameSize
-	}
 	ctx := sc.ctx
-	sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, binding.Codec, maxFrameSize)
+	{
+		var maxFrameSize int
+		if binding.MaxFrameSize > 0 {
+			maxFrameSize = binding.MaxFrameSize
+		} else {
+			maxFrameSize = DefaultMaxFrameSize
+		}
+		sc.reader = newFrameReaderWithMFS(ctx, sc.rwc, binding.DefaultReadTimeout, binding.Codec, maxFrameSize)
+	}
 	sc.writer = newFrameWriter(sc) // only used by blocking mode
 
 	sc.inflight = 1
@@ -177,6 +179,9 @@ func (sc *serveconn) serve() {
 	})
 
 	handler := binding.Handler
+
+	checkInflightStreams := binding.MaxInboundInflightStreamsPerConn > 0
+	var inflightStreams int32
 
 	for {
 		select {
@@ -191,8 +196,20 @@ func (sc *serveconn) serve() {
 				}()
 				res.readMore()
 			} else {
+				if checkInflightStreams {
+					if atomic.AddInt32(&inflightStreams, 1) > binding.MaxInboundInflightStreamsPerConn {
+						l.Error("MaxInboundInflightStreamsPerConn exceeded", zap.String("ip", sc.RemoteAddr()))
+						return
+					}
+				}
 				GoFunc(&sc.wg, func() {
-					defer sc.handleRequestPanic(res.f, time.Now())
+					defer func(frame *RequestFrame, begin time.Time) {
+						if checkInflightStreams {
+							atomic.AddInt32(&inflightStreams, -1)
+						}
+						sc.handleRequestPanic(frame, begin)
+					}(res.f, time.Now())
+
 					w := newFrameWriter(sc)
 					handler.ServeQRPC(w, res.f)
 					w.Finalize()
