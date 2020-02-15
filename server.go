@@ -81,12 +81,13 @@ func (mux *ServeMux) HandleFunc(cmd Cmd, handler func(FrameWriter, *RequestFrame
 // Handle registers the handler for the given pattern.
 // If a handler already exists for pattern, handle panics.
 func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFunc) {
-	mux.mu.Lock()
-	defer mux.mu.Unlock()
-
 	if handler == nil {
 		panic("qrpc: nil handler")
 	}
+
+	mux.mu.Lock()
+	defer mux.mu.Unlock()
+
 	if mux.m == nil {
 		mux.m = make(map[Cmd]Handler)
 	}
