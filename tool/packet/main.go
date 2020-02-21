@@ -40,5 +40,5 @@ func main() {
 	binary.BigEndian.PutUint32(buf[12:], cmdAndFlags)
 	copy(buf[16:], []byte(*payload))
 
-	fmt.Printf("packet is: %x\n", buf)
+	fmt.Printf("packet is: %x\nlength:%x\nrequestID:%x\nflag:%x\ncmd:%x\npayload:%x\n", buf, buf[0:4], buf[4:12], buf[12:13], buf[13:16], buf[16:])
 }
