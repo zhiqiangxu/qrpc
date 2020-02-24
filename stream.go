@@ -168,12 +168,13 @@ func (s *Stream) AddOutFrame(requestID uint64, flags FrameFlag) bool {
 	isRst := flags.IsRst()
 
 	if isRst {
-		if atomic.LoadInt32(&s.closedSelf) != 0 {
-			return false
-		}
-		atomic.StoreInt32(&s.closedSelf, 1)
+		oldClosedSelf := atomic.SwapInt32(&s.closedSelf, 1)
+		// no need to send rst if both sides has already closed before this turn
 		if atomic.LoadInt32(&s.closedPeer) != 0 {
 			s.afterDone()
+			if oldClosedSelf != 0 {
+				return false
+			}
 		}
 		return true
 	}
