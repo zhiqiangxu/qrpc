@@ -611,9 +611,19 @@ func (sc *serveconn) collectWriteFrames(batch int) error {
 					break
 				}
 			} else if !flags.IsPush() { // skip stream logic if PushFlag set
-				s, loaded := sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
-				if !loaded {
-					l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
+				var s *Stream
+				if dfw.checkExist {
+					s = sc.cs.GetStream(requestID, flags)
+					if s == nil {
+						res.result <- ErrStreamNotExists
+						break
+					}
+				} else {
+					var loaded bool
+					s, loaded = sc.cs.CreateOrGetStream(sc.ctx, requestID, flags)
+					if !loaded {
+						l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
+					}
 				}
 				if !s.AddOutFrame(requestID, flags) {
 					res.result <- ErrWriteAfterCloseSelf
@@ -666,6 +676,8 @@ func (sc *serveconn) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (St
 		l.Error("StreamRequest writeFirstFrame", zap.Error(err))
 		return nil, nil, err
 	}
+
+	writer.checkExist = true
 	return (*defaultStreamWriter)(writer), resp, nil
 }
 

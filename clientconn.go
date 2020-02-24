@@ -304,6 +304,8 @@ func (conn *Connection) StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) 
 		l.Error("writeFirstFrame", zap.Error(err))
 		return nil, nil, err
 	}
+
+	writer.checkExist = true
 	return (*defaultStreamWriter)(writer), resp, nil
 }
 
@@ -583,10 +585,21 @@ firstFrame:
 				goto firstFrame
 			}
 		} else if !flags.IsPush() { // skip stream logic if PushFlag set
-			s, loaded := conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
-			if !loaded {
-				l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
+			var s *Stream
+			if dfw.checkExist {
+				s = conn.cs.GetStream(requestID, flags)
+				if s == nil {
+					res.result <- ErrStreamNotExists
+					goto firstFrame
+				}
+			} else {
+				var loaded bool
+				s, loaded = conn.cs.CreateOrGetStream(*conn.loopCtx, requestID, flags)
+				if !loaded {
+					l.Debug("serveconn new stream", zap.Uint64("requestID", requestID), zap.Uint8("flags", uint8(flags)), zap.Uint32("cmd", uint32(dfw.Cmd())))
+				}
 			}
+
 			if !s.AddOutFrame(requestID, flags) {
 				res.result <- ErrWriteAfterCloseSelf
 				goto firstFrame

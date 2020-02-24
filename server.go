@@ -21,6 +21,8 @@ var (
 	ErrWriteAfterCloseSelf = errors.New("write after closeself")
 	// ErrRstNonExistingStream when reset non existing stream
 	ErrRstNonExistingStream = errors.New("reset non existing stream")
+	// ErrStreamNotExists when stream not exists
+	ErrStreamNotExists = errors.New("stream not exists")
 )
 
 // FrameWriter looks like writes a qrpc resp

@@ -16,9 +16,10 @@ type frameBytesWriter interface {
 // defaultFrameWriter is responsible for write frames
 // should create one instance per goroutine
 type defaultFrameWriter struct {
-	fbw  frameBytesWriter
-	wbuf []byte
-	resp *response
+	fbw        frameBytesWriter
+	wbuf       []byte
+	resp       *response
+	checkExist bool
 }
 
 // DefaultWBufSize for default wbuf size
@@ -36,6 +37,7 @@ var fwPool = sync.Pool{New: func() interface{} {
 func newFrameWriter(fbw frameBytesWriter) *defaultFrameWriter {
 	fw := fwPool.Get().(*defaultFrameWriter)
 	fw.fbw = fbw
+	fw.checkExist = false
 	return fw
 }
 
