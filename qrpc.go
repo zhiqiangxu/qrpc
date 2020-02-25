@@ -1,7 +1,25 @@
 package qrpc
 
 // Cmd is for multiplexer
+// only the lower two bytes are used for routing
+// the 3rd byte can be used to store opaque value
 type Cmd uint32
+
+// Opaque returns the 3rd byte of Cmd
+func (c Cmd) Opaque() uint8 {
+	return uint8(c >> 16)
+}
+
+// Routing returns the lower two bytes
+//go:nosplit
+func (c Cmd) Routing() Cmd {
+	return Cmd(c & 0xffff)
+}
+
+// CmdWithOpaque for combine Cmd and opaque
+func CmdWithOpaque(c Cmd, opaque uint8) Cmd {
+	return Cmd(uint32(c)&0xffff + uint32(opaque)<<16)
+}
 
 // FrameFlag defines type for qrpc frame
 type FrameFlag uint8

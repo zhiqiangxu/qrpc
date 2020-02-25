@@ -97,14 +97,16 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFu
 		panic("qrpc: multiple registrations for " + string(cmd))
 	}
 
-	mux.m[cmd] = HandlerWithMW(handler, middleware...)
+	mux.m[cmd.Routing()] = HandlerWithMW(handler, middleware...)
 }
 
 // ServeQRPC dispatches the request to the handler whose
 // cmd matches the request.
 func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
+	routingCmd := r.Cmd.Routing()
+
 	mux.mu.RLock()
-	h, ok := mux.m[r.Cmd]
+	h, ok := mux.m[routingCmd]
 	if !ok {
 		l.Error("cmd not registered", zap.Uint32("cmd", uint32(r.Cmd)))
 		r.Close()
