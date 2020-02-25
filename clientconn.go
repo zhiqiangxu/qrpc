@@ -373,14 +373,25 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 		return loopCtx.Err()
 	}
 
-	select {
-	case err := <-wfr.result:
-		wfr.dfw = nil
-		wfrPool.Put(wfr)
-		return err
-	case <-loopCtx.Done():
-		return loopCtx.Err()
+	// if reconnect is enabled, wfr is guaranteed to be processed finally once committed
+	if conn.reconnect {
+		select {
+		case err := <-wfr.result:
+			wfr.dfw = nil
+			wfrPool.Put(wfr)
+			return err
+		}
+	} else {
+		select {
+		case err := <-wfr.result:
+			wfr.dfw = nil
+			wfrPool.Put(wfr)
+			return err
+		case <-loopCtx.Done():
+			return loopCtx.Err()
+		}
 	}
+
 }
 
 // ResetFrame resets a stream by requestID
@@ -610,7 +621,7 @@ firstFrame:
 		conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
 	case <-(*conn.loopCtx).Done():
-		// no need to deal with sc.cachedRequests since they will fall into the same case anyway
+		conn.abortRequestsWhenClosed()
 		return (*conn.loopCtx).Err()
 	}
 
@@ -652,7 +663,7 @@ firstFrame:
 			conn.cachedBuffs = append(conn.cachedBuffs, dfw.GetWbuf())
 
 		case <-(*conn.loopCtx).Done():
-			// no need to deal with sc.cachedRequests since they will fall into the same case anyway
+			conn.abortRequestsWhenClosed()
 			return (*conn.loopCtx).Err()
 		default:
 			return nil
@@ -660,6 +671,18 @@ firstFrame:
 	}
 
 	return nil
+}
+
+func (conn *Connection) abortRequestsWhenClosed() {
+
+	// if reconnect not enabled,
+	// no need to deal with conn.cachedRequests since they will fall into the same case anyway
+	if !conn.reconnect {
+		return
+	}
+	for _, request := range conn.cachedRequests {
+		request.result <- ErrConnAlreadyClosed
+	}
 }
 
 func (conn *Connection) writeBuffers() error {

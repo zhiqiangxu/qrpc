@@ -1,3 +1,2 @@
-1.clientconn断开时写队列的处理方式可配置
-2.poller
-3.graceful restart
+1.poller
+2.graceful restart
