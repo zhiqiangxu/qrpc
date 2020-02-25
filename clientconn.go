@@ -239,7 +239,11 @@ func (conn *Connection) loop() {
 }
 
 func (conn *Connection) atomicLoopCtx() context.Context {
-	return *(*context.Context)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&conn.loopCtx))))
+	cp := (*context.Context)(atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(&conn.loopCtx))))
+	if cp == nil {
+		return nil
+	}
+	return *cp
 }
 
 func (conn *Connection) connect() error {
@@ -367,6 +371,9 @@ func (conn *Connection) writeFrameBytes(dfw *defaultFrameWriter) error {
 	}
 
 	loopCtx := conn.atomicLoopCtx()
+	if loopCtx == nil {
+		return ErrConnAlreadyClosed
+	}
 	select {
 	case conn.writeFrameCh <- wfr:
 	case <-loopCtx.Done():
