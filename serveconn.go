@@ -147,6 +147,7 @@ func (sc *serveconn) RemoteAddr() string {
 func (sc *serveconn) serve() {
 
 	idx := sc.idx
+	binding := sc.server.bindings[idx]
 
 	defer func() {
 		// connection level panic
@@ -158,9 +159,11 @@ func (sc *serveconn) serve() {
 		}
 		sc.Close()
 		sc.wg.Wait()
+		if binding.LifecycleCallbacks.OnClose != nil {
+			binding.LifecycleCallbacks.OnClose(sc.rwc)
+		}
 	}()
 
-	binding := sc.server.bindings[idx]
 	ctx := sc.ctx
 	{
 		var maxFrameSize int

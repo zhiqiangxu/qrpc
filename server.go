@@ -279,6 +279,9 @@ func (srv *Server) Serve(ln Listener, idx int) error {
 	srv.trackListener(ln, idx, true)
 	defer srv.trackListener(ln, idx, false)
 
+	acceptCheckFunc := srv.bindings[idx].LifecycleCallbacks.OnAccept
+	closeNotifyFunc := srv.bindings[idx].LifecycleCallbacks.OnClose
+
 	serveCtx, cancelFunc := context.WithCancel(context.Background())
 	defer cancelFunc()
 	for {
@@ -308,6 +311,18 @@ func (srv *Server) Serve(ln Listener, idx int) error {
 			continue
 		}
 		tempDelay = 0
+
+		if acceptCheckFunc != nil {
+			e = acceptCheckFunc(rw)
+			if e != nil {
+				l.Debug("OnAccept", zap.Error(e))
+				rw.Close()
+				if closeNotifyFunc != nil {
+					closeNotifyFunc(rw)
+				}
+				continue
+			}
+		}
 
 		GoFunc(&srv.wg, func() {
 			c := srv.newConn(serveCtx, rw, idx)

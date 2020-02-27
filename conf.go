@@ -16,6 +16,14 @@ type CompressorCodec interface {
 	Decode([]byte) ([]byte, error)
 }
 
+// ServerLifecycleCallbacks for handling net.Con outside of handler
+type ServerLifecycleCallbacks struct {
+	// connection will be rejected if OnAccept returns non nil error
+	OnAccept func(net.Conn) error
+	// called after connection is closed
+	OnClose func(net.Conn)
+}
+
 // ServerBinding contains binding infos
 type ServerBinding struct {
 	Addr                             string
@@ -36,6 +44,7 @@ type ServerBinding struct {
 	LatencyMetric                    metrics.Histogram
 	CounterMetric                    metrics.Counter
 	TLSConf                          *tls.Config
+	LifecycleCallbacks               ServerLifecycleCallbacks
 	ln                               Listener
 }
 

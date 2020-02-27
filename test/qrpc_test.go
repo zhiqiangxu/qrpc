@@ -30,7 +30,7 @@ const (
 func TestNonStream(t *testing.T) {
 
 	go startServer()
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Millisecond * 500)
 
 	conf := qrpc.ConnectionConfig{}
 
@@ -58,7 +58,7 @@ func TestNonStream(t *testing.T) {
 func TestCancel(t *testing.T) {
 
 	go startServerForCancel()
-	time.Sleep(time.Second * 2)
+	time.Sleep(time.Millisecond * 500)
 
 	conf := qrpc.ConnectionConfig{}
 
