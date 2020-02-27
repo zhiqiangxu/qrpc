@@ -96,6 +96,7 @@ func (r *RequestFrame) FrameCh() <-chan *Frame {
 }
 
 // StreamInitiator for stream initiating side, may also be from server side
+// implemented by both Connection and serverconn
 type StreamInitiator interface {
 	StreamRequest(cmd Cmd, flags FrameFlag, payload []byte) (StreamWriter, Response, error)
 	IsClosed() bool

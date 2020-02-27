@@ -28,8 +28,10 @@ type (
 	}
 )
 
-// NewClientTransport creates a Transport for client
-func NewClientTransport(c qrpc.StreamInitiator) Transport {
+// NewTransport creates a Transport for StreamInitiator
+// at client side, a *qrpc.Connection can be used as StreamInitiator
+// at server side, call frame.StreamInitiator() to get the StreamInitiator
+func NewTransport(c qrpc.StreamInitiator) Transport {
 	return &clientTransport{c: c}
 }
 

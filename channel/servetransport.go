@@ -42,7 +42,7 @@ func NewQRPCHandler(handler Handler) qrpc.Handler {
 func (h *ServeHandler) ServeQRPC(w qrpc.FrameWriter, frame *qrpc.RequestFrame) {
 	sender := &serveSender{w: w, frame: frame}
 	receiver := &serveReceiver{frame: frame}
-	h.handler.ServeSRT(sender, receiver, NewClientTransport(frame.StreamInitiator()))
+	h.handler.ServeSRT(sender, receiver, NewTransport(frame.StreamInitiator()))
 }
 
 func (s *serveSender) Send(ctx context.Context, cmd qrpc.Cmd, msg interface{}, end bool) (err error) {

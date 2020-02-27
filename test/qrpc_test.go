@@ -465,7 +465,7 @@ func TestChannelStyle(t *testing.T) {
 		panic(err)
 	}
 
-	transport := channel.NewClientTransport(conn)
+	transport := channel.NewTransport(conn)
 	sender, receiver, err := transport.Pipe()
 	if err != nil {
 		panic(err)
