@@ -330,9 +330,17 @@ func main() {
 
 ## Performance
 
+##### `MBP`单机压测数据：
+
 ![avatar](https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/performance.jpg)
 
 性能大概是`http`的 **4** 倍!
+
+##### 单独施压机，`16C32G`压测数据：
+
+![benchmark](https://raw.githubusercontent.com/zhiqiangxu/qrpc/master/doc/benchmark.jpg)
+
+`qps`达到了**203k**，且此时`cpu`使用率为**75%**。
 
 ------
 
