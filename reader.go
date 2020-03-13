@@ -68,14 +68,22 @@ func (r *Reader) ReadUint32() (uint32, error) {
 	return binary.BigEndian.Uint32(bytes), nil
 }
 
-// ReadBytes read bytes honouring CtxCheckMaxInterval
-func (r *Reader) ReadBytes(bytes []byte) (err error) {
+// ReadBytes read bytes with configured read timeout
+func (r *Reader) ReadBytes(bytes []byte) error {
+	return r.ReadBytesWithMaxTimeout(bytes, 0)
+}
+
+// ReadBytesWithMaxTimeout read bytes honouring maxTimeoutSecond
+func (r *Reader) ReadBytesWithMaxTimeout(bytes []byte, maxTimeoutSecond int) (err error) {
 	var (
 		endTime time.Time
 		offset  int
 		n       int
 	)
 	timeout := r.timeout
+	if maxTimeoutSecond > 0 && timeout > maxTimeoutSecond {
+		timeout = maxTimeoutSecond
+	}
 	if timeout > 0 {
 		endTime = time.Now().Add(time.Duration(timeout) * time.Second)
 	} else {

@@ -76,6 +76,10 @@ start:
 
 }
 
+const (
+	payloadReadMaxTimeoutSecond = 3
+)
+
 func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	header := dfr.rbuf[:]
@@ -103,7 +107,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	if size > 12 {
 		payload := make([]byte, size-12)
-		err = dfr.ReadBytes(payload)
+		err = dfr.ReadBytesWithMaxTimeout(payload, payloadReadMaxTimeoutSecond)
 		if err != nil {
 			return nil, err
 		}
