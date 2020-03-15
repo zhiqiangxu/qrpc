@@ -49,13 +49,13 @@ func (dfw *defaultFrameWriter) Finalize() {
 
 // StartWrite Write the FrameHeader.
 func (dfw *defaultFrameWriter) StartWrite(requestID uint64, cmd Cmd, flags FrameFlag) {
-
 	binary.BigEndian.PutUint64(dfw.wbuf[4:], requestID)
 	cmdAndFlags := uint32(flags)<<24 + uint32(cmd)&0xffffff
 	binary.BigEndian.PutUint32(dfw.wbuf[12:], cmdAndFlags)
 }
 
 func (dfw *defaultFrameWriter) Cmd() Cmd {
+	_ = dfw.wbuf[15]
 	return Cmd(uint32(dfw.wbuf[13])<<16 | uint32(dfw.wbuf[14])<<8 | uint32(dfw.wbuf[15]))
 }
 
