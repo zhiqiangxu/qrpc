@@ -12,6 +12,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/zhiqiangxu/util"
 	"go.uber.org/zap"
 )
 
@@ -205,7 +206,7 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 		atomic.StorePointer((*unsafe.Pointer)((unsafe.Pointer)(&c.loopCtx)), unsafe.Pointer(&loopCtx))
 		c.loopBytesWriter = NewWriterWithTimeout(loopCtx, rwc, conf.WriteTimeout)
 	}
-	GoFunc(&c.wg, c.loop)
+	util.GoFunc(&c.wg, c.loop)
 	return c
 }
 
@@ -217,11 +218,11 @@ func (conn *Connection) loop() {
 		}
 
 		conn.loopWG = &sync.WaitGroup{}
-		GoFunc(conn.loopWG, func() {
+		util.GoFunc(conn.loopWG, func() {
 			conn.readFrames()
 		})
 
-		GoFunc(conn.loopWG, func() {
+		util.GoFunc(conn.loopWG, func() {
 			conn.writeFrames()
 		})
 
@@ -504,7 +505,7 @@ func (conn *Connection) readFrames() {
 					l.Error("clientconn get RequestFrame block")
 					return
 				}
-				GoFunc(conn.loopWG, func() {
+				util.GoFunc(conn.loopWG, func() {
 					defer conn.handleRequestPanic((*RequestFrame)(frame), time.Now())
 					w := conn.getWriter()
 					conn.conf.Handler.ServeQRPC(w, (*RequestFrame)(frame))
@@ -531,7 +532,7 @@ func (conn *Connection) handleRequestPanic(frame *RequestFrame, begin time.Time)
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		l.Error("Connection.handleRequestPanic", zap.String("stack", String(buf)), zap.Any("err", err))
+		l.Error("Connection.handleRequestPanic", zap.String("stack", util.String(buf)), zap.Any("err", err))
 	}
 
 	s := frame.Stream

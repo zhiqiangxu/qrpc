@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/oklog/run"
+	"github.com/zhiqiangxu/util"
 	"go.uber.org/ratelimit"
 	"go.uber.org/zap"
 )
@@ -324,7 +325,7 @@ func (srv *Server) Serve(ln Listener, idx int) error {
 			}
 		}
 
-		GoFunc(&srv.wg, func() {
+		util.GoFunc(&srv.wg, func() {
 			c := srv.newConn(serveCtx, rw, idx)
 			c.serve()
 		})

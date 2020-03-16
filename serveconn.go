@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/zhiqiangxu/util"
 	"go.uber.org/zap"
 )
 
@@ -155,7 +156,7 @@ func (sc *serveconn) serve() {
 			const size = 64 << 10
 			buf := make([]byte, size)
 			buf = buf[:runtime.Stack(buf, false)]
-			l.Error("connection panic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
+			l.Error("connection panic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", util.String(buf)), zap.Any("err", err))
 		}
 		sc.Close()
 		sc.wg.Wait()
@@ -177,7 +178,7 @@ func (sc *serveconn) serve() {
 	sc.writer = newFrameWriter(sc) // only used by blocking mode
 
 	sc.inflight = 1
-	GoFunc(&sc.wg, func() {
+	util.GoFunc(&sc.wg, func() {
 		sc.readFrames()
 	})
 
@@ -205,7 +206,7 @@ func (sc *serveconn) serve() {
 						return
 					}
 				}
-				GoFunc(&sc.wg, func() {
+				util.GoFunc(&sc.wg, func() {
 					defer func(frame *RequestFrame, begin time.Time) {
 						if checkInflightStreams {
 							atomic.AddInt32(&inflightStreams, -1)
@@ -256,7 +257,7 @@ func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
 		const size = 64 << 10
 		buf := make([]byte, size)
 		buf = buf[:runtime.Stack(buf, false)]
-		l.Error("handleRequestPanic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", String(buf)), zap.Any("err", err))
+		l.Error("handleRequestPanic", zap.String("ip", sc.RemoteAddr()), zap.String("stack", util.String(buf)), zap.Any("err", err))
 
 	}
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/channel"
+	"github.com/zhiqiangxu/util"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
 )
@@ -112,7 +113,7 @@ func TestPerformance(t *testing.T) {
 	startTime := time.Now()
 	for {
 
-		qrpc.GoFunc(&wg, func() {
+		util.GoFunc(&wg, func() {
 			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
 			if err != nil {
 				panic(err)
@@ -154,7 +155,7 @@ func TestAPI(t *testing.T) {
 	var wg sync.WaitGroup
 	startTime := time.Now()
 	for {
-		qrpc.GoFunc(&wg, func() {
+		util.GoFunc(&wg, func() {
 			frame, err := api.Call(context.Background(), HelloCmd, []byte("xu"))
 			if err != nil {
 				panic(err)
@@ -195,7 +196,7 @@ func TestPerformanceShort(t *testing.T) {
 	startTime := time.Now()
 
 	for {
-		qrpc.GoFunc(&wg, func() {
+		util.GoFunc(&wg, func() {
 			conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
 			if err != nil {
 				panic(err)
@@ -278,7 +279,7 @@ func TestGRPCPerformance(t *testing.T) {
 	i := 0
 	var wg sync.WaitGroup
 	for {
-		qrpc.GoFunc(&wg, func() {
+		util.GoFunc(&wg, func() {
 			_, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: name})
 			if err != nil {
 				panic(err)

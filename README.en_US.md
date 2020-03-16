@@ -200,6 +200,7 @@ The key is `StreamFlag`!
 package main
 import (
     "github.com/zhiqiangxu/qrpc"
+    "github.com/zhiqiangxu/util"
     "sync"
 )
 
@@ -216,7 +217,7 @@ func main() {
         qserver := request.ConnectionInfo().Server()
         pushID := qserver.GetPushID()
         qserver.WalkConn(0, func(writer qrpc.FrameWriter, ci *qrpc.ConnectionInfo) bool {
-            qrpc.GoFunc(&wg, func() {
+            util.GoFunc(&wg, func() {
                 writer.StartWrite(pushID, HelloCmd, qrpc.PushFlag)
                 writer.WriteBytes([]byte("pushed msg"))
                 writer.EndWrite()

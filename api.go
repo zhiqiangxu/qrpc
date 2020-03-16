@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 
 	"go.uber.org/zap"
+	"github.com/zhiqiangxu/util"
 )
 
 /* api provides utilities for make nonblocking api calls with qrpc.Connection */
@@ -101,7 +102,7 @@ func (api *defaultAPI) CallAll(ctx context.Context, cmd Cmd, payload []byte) map
 	var wg sync.WaitGroup
 	for i := range api.endpoints {
 		idx := i
-		GoFunc(&wg, func() {
+		util.GoFunc(&wg, func() {
 			frame, err := api.callViaIdx(ctx, idx, cmd, payload)
 			mu.Lock()
 			result[api.endpoints[idx]] = &APIResult{Frame: frame, Err: err}
