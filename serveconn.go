@@ -731,16 +731,16 @@ func (sc *serveconn) Close() error {
 
 }
 
-func (sc *serveconn) closeUntracked() error {
+func (sc *serveconn) closeUntracked() (err error) {
 
-	err := sc.rwc.Close()
-	if err != nil {
-		return err
-	}
-	sc.cancelCtx()
+	err = sc.rwc.Close()
 
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 	ci.l.Lock()
+	if ci.closed {
+		ci.l.Unlock()
+		return
+	}
 	ci.closed = true
 	closeNotify := ci.closeNotify
 	ci.closeNotify = nil
@@ -748,6 +748,7 @@ func (sc *serveconn) closeUntracked() error {
 	ci.respes = nil
 	ci.l.Unlock()
 
+	sc.cancelCtx()
 	for _, v := range respes {
 		v.Close()
 	}
@@ -755,5 +756,5 @@ func (sc *serveconn) closeUntracked() error {
 		f()
 	}
 
-	return nil
+	return
 }
