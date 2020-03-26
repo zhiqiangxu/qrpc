@@ -35,7 +35,8 @@ type ServerBinding struct {
 	ReadFrameChSize                  int
 	WriteFrameChSize                 int
 	MaxFrameSize                     int
-	MaxCloseRate                     int   // per second
+	MaxCloseRate                     int // per second
+	MaxInboundFramePerSecond         int
 	MaxInboundInflightStreamsPerConn int32 // connection will be closed when exceeded
 	ListenFunc                       func(network, address string) (net.Listener, error)
 	Codec                            CompressorCodec

@@ -288,6 +288,8 @@ func (sc *serveconn) GetWriter() FrameWriter {
 var (
 	// ErrInvalidPacket when packet invalid
 	ErrInvalidPacket = errors.New("invalid packet")
+	// ErrInboundFramePerSecondExceeded when max inbound frame per second exceeded
+	ErrInboundFramePerSecondExceeded = errors.New("inbound frame per second exceeded")
 )
 
 type readFrameResult struct {
@@ -350,8 +352,25 @@ func (sc *serveconn) readFrames() (err error) {
 	gate := make(gate, 1)
 	gateDone := gate.Done
 
+	checkInBoundQPS := binding.MaxInboundFramePerSecond > 0
+	var (
+		lastCheckTS int64
+		tsCount     int
+	)
 	for {
 		req, err := sc.reader.ReadFrame(sc.cs)
+		if checkInBoundQPS {
+			nowTS := time.Now().Unix()
+			if nowTS != lastCheckTS {
+				tsCount = 1
+				lastCheckTS = nowTS
+			} else {
+				tsCount++
+			}
+			if tsCount > binding.MaxInboundFramePerSecond {
+				err = ErrInboundFramePerSecondExceeded
+			}
+		}
 		if err != nil {
 			sc.Close()
 			sc.reader.Finalize()
