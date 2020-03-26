@@ -184,7 +184,7 @@ func (sc *serveconn) serve() {
 
 	handler := binding.Handler
 
-	checkInflightStreams := binding.MaxInboundInflightStreamsPerConn > 0
+	checkInflightStreams := binding.MaxInboundInflightStreamPerConn > 0
 	var inflightStreams int32
 
 	for {
@@ -201,8 +201,8 @@ func (sc *serveconn) serve() {
 				res.readMore()
 			} else {
 				if checkInflightStreams {
-					if atomic.AddInt32(&inflightStreams, 1) > binding.MaxInboundInflightStreamsPerConn {
-						l.Error("MaxInboundInflightStreamsPerConn exceeded", zap.String("ip", sc.RemoteAddr()))
+					if atomic.AddInt32(&inflightStreams, 1) > binding.MaxInboundInflightStreamPerConn {
+						l.Error("MaxInboundInflightStreamPerConn exceeded", zap.String("ip", sc.RemoteAddr()))
 						return
 					}
 				}
