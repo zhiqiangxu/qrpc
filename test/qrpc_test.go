@@ -28,60 +28,6 @@ const (
 )
 
 // TestConnection tests connection
-func TestMwStash(t *testing.T) {
-
-	go startServerMw()
-	time.Sleep(time.Millisecond * 500)
-
-	conf := qrpc.ConnectionConfig{}
-
-	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
-		fmt.Println(frame)
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	_, resp, err := conn.Request(HelloCmd, 0, []byte(" xu"))
-	if err != nil {
-		panic(err)
-	}
-	frame, err := resp.GetFrame()
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println("resp is ", string(frame.Payload))
-}
-
-
-func Mw(_ qrpc.FrameWriter, request *qrpc.RequestFrame) bool {
-	request.SetStash("mw stash")
-	return true
-}
-
-func startServerMw() {
-	handler := qrpc.NewServeMux()
-	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
-		// time.Sleep(time.Hour)
-		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
-		stash := request.GetStash()
-		writer.WriteBytes(append([]byte("hello " + stash.(string)), request.Payload...))
-		err := writer.EndWrite()
-		if err != nil {
-			panic(err)
-		}
-	}, Mw)
-	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
-	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		panic(err)
-	}
-}
-
-// TestConnection tests connection
 func TestNonStream(t *testing.T) {
 
 	go startServer()
