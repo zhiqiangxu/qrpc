@@ -61,12 +61,12 @@ func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
 	return r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
 
 }
-// return stash
+// GetFrameStash return stash
 func (r *RequestFrame) GetFrameStash() interface{} {
 	return r.stash
 }
 
-// set stash, could pass middleware to handler
+// SetFrameStash set stash, could pass middleware to handler
 func (r *RequestFrame) SetFrameStash(stash interface{}) {
 	r.stash = stash
 }
