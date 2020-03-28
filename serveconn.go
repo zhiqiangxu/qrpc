@@ -188,11 +188,13 @@ func (sc *serveconn) serve() {
 	var inflightStreams int32
 
 	for {
+
+
 		select {
 		case <-ctx.Done():
 			return
 		case res := <-sc.readFrameCh:
-
+			res.f.Stream.ctx = context.WithValue(res.f.Stream.ctx, StreamInfoKey, &StreamInfo{})
 			if res.readMore != nil {
 				func() {
 					defer sc.handleRequestPanic(res.f, time.Now())

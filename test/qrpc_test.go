@@ -27,6 +27,64 @@ const (
 	n    = 100000
 )
 
+// TestStreamInfo tests StreamInfo
+func TestStreamInfo(t *testing.T) {
+
+	go startServerForMw()
+	time.Sleep(time.Millisecond * 500)
+
+	conf := qrpc.ConnectionConfig{}
+
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+		fmt.Println(frame)
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	_, resp, err := conn.Request(HelloCmd, 0, []byte(" wxx"))
+	if err != nil {
+		panic(err)
+	}
+	frame, err := resp.GetFrame()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("resp is ", string(frame.Payload))
+
+}
+
+
+func mW(_ qrpc.FrameWriter, r *qrpc.RequestFrame)  bool {
+	streamInfo := r.StreamInfo()
+	streamInfo.SetAnything("stream info for mw")
+	return true
+}
+
+func startServerForMw() {
+	handler := qrpc.NewServeMux()
+	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
+		// time.Sleep(time.Hour)
+
+		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
+		anything := request.StreamInfo().GetAnything()
+		writer.WriteBytes(append([]byte("hello " + anything.(string)), request.Payload...))
+		err := writer.EndWrite()
+		if err != nil {
+			fmt.Println("EndWrite", err)
+		}
+	}, mW)
+	bindings := []qrpc.ServerBinding{
+		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+	server := qrpc.NewServer(bindings)
+	err := server.ListenAndServe()
+	if err != nil {
+		fmt.Println("ListenAndServe", err)
+		panic(err)
+	}
+}
+
+
 // TestConnection tests connection
 func TestNonStream(t *testing.T) {
 

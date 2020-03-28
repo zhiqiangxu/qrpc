@@ -3,6 +3,7 @@ module github.com/zhiqiangxu/qrpc
 go 1.12
 
 require (
+	github.com/VividCortex/gohistogram v1.0.0 // indirect
 	github.com/go-kit/kit v0.9.0
 	github.com/gogo/protobuf v1.3.1
 	github.com/gorilla/websocket v1.4.1

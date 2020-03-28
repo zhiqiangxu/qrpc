@@ -61,6 +61,11 @@ func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
 
 }
 
+// StreamInfo returns the underlying StreamInfo
+func (r *RequestFrame) StreamInfo() *StreamInfo {
+	return r.Stream.ctx.Value(StreamInfoKey).(*StreamInfo)
+}
+
 // Close the underlying connection
 func (r *RequestFrame) Close() error {
 

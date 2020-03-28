@@ -88,6 +88,7 @@ type Stream struct {
 
 func newStream(ctx context.Context, requestID uint64, closeNotify func()) *Stream {
 	ctx, cancelFunc := context.WithCancel(ctx)
+	context.WithValue(ctx, StreamInfoKey, &StreamInfo{})
 	s := &Stream{ID: requestID, frameCh: make(chan *Frame), ctx: ctx, cancelFunc: cancelFunc, fullCloseCh: make(chan struct{}), closeNotify: closeNotify}
 
 	return s
@@ -227,4 +228,27 @@ func (s *Stream) reset() {
 func (s *Stream) Release() {
 	s.ResetByPeer()
 	s.afterDone()
+}
+
+// StreamInfoKey is context key for StreamInfo
+// used to store custom information
+var StreamInfoKey = &contextKey{"qrpc-stream"}
+
+type StreamInfo struct {
+	l        sync.RWMutex
+	anything interface{}
+}
+
+// SetAnything sets anything
+func (si *StreamInfo) SetAnything(anything interface{}) {
+	si.l.Lock()
+	si.anything = anything
+	si.l.Unlock()
+}
+
+// GetAnything returns anything
+func (si *StreamInfo) GetAnything() interface{} {
+	si.l.RLock()
+	defer si.l.RUnlock()
+	return si.anything
 }
