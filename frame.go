@@ -12,7 +12,7 @@ type Frame struct {
 	Cmd       Cmd
 	Payload   []byte
 	Stream    *Stream // non nil for the first frame in stream
-	stash     interface{} // store per frame stuff,mainly used by middleware
+	stash     interface{} // store per frame stuff, mainly used by middleware
 }
 
 // FrameCh get the next frame ch
@@ -61,12 +61,12 @@ func (r *RequestFrame) ClientConnectionInfo() *ClientConnectionInfo {
 	return r.Stream.ctx.Value(ClientConnectionInfoKey).(*ClientConnectionInfo)
 
 }
-// GetFrameStash return stash
+// GetFrameStash fetches frame stash
 func (r *RequestFrame) GetFrameStash() interface{} {
 	return r.stash
 }
 
-// SetFrameStash set stash, could pass middleware to handler
+// SetFrameStash for set frame stash
 func (r *RequestFrame) SetFrameStash(stash interface{}) {
 	r.stash = stash
 }
