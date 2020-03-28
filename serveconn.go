@@ -70,22 +70,18 @@ type ConnectionInfo struct {
 	closed      bool
 	id          string
 	closeNotify []func()
-	anything    interface{}
+	anything    interface{} // caller is responsible for synchronize get/set
 	respes      map[uint64]*response
 }
 
 // GetAnything returns anything
 func (ci *ConnectionInfo) GetAnything() interface{} {
-	ci.l.RLock()
-	defer ci.l.RUnlock()
 	return ci.anything
 }
 
 // SetAnything sets anything
 func (ci *ConnectionInfo) SetAnything(anything interface{}) {
-	ci.l.Lock()
 	ci.anything = anything
-	ci.l.Unlock()
 }
 
 // GetID returns the ID
