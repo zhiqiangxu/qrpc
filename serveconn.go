@@ -181,7 +181,14 @@ func (sc *serveconn) serve() {
 	handler := binding.Handler
 
 	checkInflightStreams := binding.MaxInboundInflightStreamPerConn > 0
-	var inflightStreams int32
+	var (
+		inflightStreams    int32
+		inflightStreamsPtr *int32
+	)
+
+	if checkInflightStreams {
+		inflightStreamsPtr = &inflightStreams
+	}
 
 	for {
 		select {
@@ -191,24 +198,19 @@ func (sc *serveconn) serve() {
 
 			if res.readMore != nil {
 				func() {
-					defer sc.handleRequestPanic(res.f, time.Now())
+					defer sc.handleRequestPanic(res.f, time.Now(), inflightStreamsPtr)
 					handler.ServeQRPC(sc.writer, res.f)
 				}()
 				res.readMore()
 			} else {
 				if checkInflightStreams {
-					if atomic.AddInt32(&inflightStreams, 1) > binding.MaxInboundInflightStreamPerConn {
+					if atomic.AddInt32(inflightStreamsPtr, 1) > binding.MaxInboundInflightStreamPerConn {
 						l.Error("MaxInboundInflightStreamPerConn exceeded", zap.String("ip", sc.RemoteAddr()))
 						return
 					}
 				}
 				util.GoFunc(&sc.wg, func() {
-					defer func(frame *RequestFrame, begin time.Time) {
-						if checkInflightStreams {
-							atomic.AddInt32(&inflightStreams, -1)
-						}
-						sc.handleRequestPanic(frame, begin)
-					}(res.f, time.Now())
+					defer sc.handleRequestPanic(res.f, time.Now(), inflightStreamsPtr)
 
 					w := newFrameWriter(sc)
 					handler.ServeQRPC(w, res.f)
@@ -244,7 +246,11 @@ func (sc *serveconn) instrument(frame *RequestFrame, begin time.Time, err interf
 
 }
 
-func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time) {
+func (sc *serveconn) handleRequestPanic(frame *RequestFrame, begin time.Time, inflightStreamsPtr *int32) {
+	if inflightStreamsPtr != nil {
+		atomic.AddInt32(inflightStreamsPtr, -1)
+	}
+
 	err := recover()
 	sc.instrument(frame, begin, err)
 
