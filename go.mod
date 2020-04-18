@@ -7,6 +7,7 @@ require (
 	github.com/gogo/protobuf v1.3.1
 	github.com/gorilla/websocket v1.4.1
 	github.com/oklog/run v1.0.0
+	github.com/urfave/cli/v2 v2.2.0
 	github.com/zhiqiangxu/go-reuseport v0.2.1
 	github.com/zhiqiangxu/util v0.0.0-20200223133249-c15c59c527f0
 	go.uber.org/ratelimit v0.1.0

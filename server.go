@@ -88,6 +88,10 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFu
 		panic("qrpc: nil handler")
 	}
 
+	if cmd > MaxCmd {
+		panic("qrpc: cmd too big")
+	}
+
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
 

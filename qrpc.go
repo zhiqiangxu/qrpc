@@ -5,6 +5,11 @@ package qrpc
 // the 3rd byte can be used to store opaque value
 type Cmd uint32
 
+const (
+	// MaxCmd for qrpc
+	MaxCmd = 0xffffff
+)
+
 // Opaque returns the 3rd byte of Cmd
 func (c Cmd) Opaque() uint8 {
 	return uint8(c >> 16)
