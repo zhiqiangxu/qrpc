@@ -509,8 +509,6 @@ func (srv *Server) untrack(sc *serveconn, kicked bool) (bool, <-chan struct{}) {
 	return true, sc.untrackedCh
 }
 
-var shutdownPollInterval = 500 * time.Millisecond
-
 // Shutdown gracefully shutdown the server
 func (srv *Server) Shutdown() error {
 
