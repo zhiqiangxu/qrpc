@@ -226,8 +226,17 @@ func (conn *Connection) loop() {
 			conn.writeFrames()
 		})
 
+		if conn.conf.LifecycleCallbacks.OnConnect != nil {
+			conn.conf.LifecycleCallbacks.OnConnect(conn)
+		}
+
 		<-(*conn.loopCtx).Done()
 		conn.closeRWC()
+
+		if conn.conf.LifecycleCallbacks.OnDisconnect != nil {
+			conn.conf.LifecycleCallbacks.OnDisconnect(conn)
+		}
+
 		conn.loopWG.Wait()
 		conn.endLoop()
 

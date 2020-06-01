@@ -52,18 +52,25 @@ type ServerBinding struct {
 // SubFunc for subscribe callback
 type SubFunc func(*Connection, *Frame)
 
+// ClientLifecycleCallbacks for Connection
+type ClientLifecycleCallbacks struct {
+	OnConnect    func(*Connection)
+	OnDisconnect func(*Connection)
+}
+
 // ConnectionConfig is conf for Connection
 type ConnectionConfig struct {
-	WriteTimeout     int
-	ReadTimeout      int
-	DialTimeout      time.Duration
-	WriteFrameChSize int
-	WBufSize         int // best effort only, check log for error
-	RBufSize         int // best effort only, check log for error
-	Handler          Handler
-	OverlayNetwork   func(address string, dialConfig DialConfig) (net.Conn, error)
-	Codec            CompressorCodec
-	TLSConf          *tls.Config
+	WriteTimeout       int
+	ReadTimeout        int
+	DialTimeout        time.Duration
+	WriteFrameChSize   int
+	WBufSize           int // best effort only, check log for error
+	RBufSize           int // best effort only, check log for error
+	Handler            Handler
+	OverlayNetwork     func(address string, dialConfig DialConfig) (net.Conn, error)
+	Codec              CompressorCodec
+	TLSConf            *tls.Config
+	LifecycleCallbacks ClientLifecycleCallbacks
 }
 
 // DialConfig for dial
