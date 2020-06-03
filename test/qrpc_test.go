@@ -20,6 +20,7 @@ import (
 	"github.com/zhiqiangxu/util"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
+	"gotest.tools/assert"
 )
 
 const (
@@ -27,8 +28,7 @@ const (
 	n    = 100000
 )
 
-// TestConnection tests connection
-func TestNonStream(t *testing.T) {
+func TestNonStreamAndPushFlg(t *testing.T) {
 
 	go startServer()
 	time.Sleep(time.Millisecond * 500)
@@ -38,19 +38,20 @@ func TestNonStream(t *testing.T) {
 	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	for _, flag := range []qrpc.FrameFlag{0, qrpc.NBFlag} {
 		_, resp, err := conn.Request(HelloCmd, flag, []byte("xu"))
-		if err != nil {
-			panic(err)
-		}
+
+		assert.Assert(t, err == nil)
+
 		frame, err := resp.GetFrame()
-		if err != nil {
-			panic(err)
-		}
+
+		assert.Assert(t, err == nil)
+
+		_, resp, err = conn.Request(PushCmd, flag|qrpc.PushFlag, []byte("xu"))
+		assert.Assert(t, err == nil && resp == nil)
+
 		fmt.Println("resp is ", string(frame.Payload))
 	}
 
@@ -66,24 +67,18 @@ func TestCancel(t *testing.T) {
 	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(frame)
 	})
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	requestID, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	fmt.Println("requestID", requestID)
 	err = conn.ResetFrame(requestID, 0)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	frame, err := resp.GetFrame()
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	fmt.Println("resp is ", string(frame.Payload))
 
 }
@@ -323,6 +318,7 @@ func startGRPCServer() {
 const (
 	HelloCmd qrpc.Cmd = iota
 	HelloRespCmd
+	PushCmd
 	ClientCmd
 	ClientRespCmd
 	ChannelCmd
@@ -340,6 +336,9 @@ func startServer() {
 		if err != nil {
 			panic(err)
 		}
+	})
+	handler.HandleFunc(PushCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
+		// noop
 	})
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
@@ -419,19 +418,13 @@ func TestClientHandler(t *testing.T) {
 	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
 		fmt.Println(string(frame.Payload))
 	})
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu "))
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	frame, err := resp.GetFrame()
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 	fmt.Println("resp is ", string(frame.Payload))
 }
 
@@ -462,49 +455,40 @@ func TestChannelStyle(t *testing.T) {
 	time.Sleep(time.Millisecond * 100)
 
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	transport := channel.NewTransport(conn)
 	sender, receiver, err := transport.Pipe()
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
 
 	ctx := context.Background()
 	msg1 := "hello channel1"
 	err = sender.Send(ctx, ChannelCmd, msg1, false)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	msg2 := "hello channel2"
 	err = sender.Send(ctx, ChannelCmd, msg2, false)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	var (
 		cmd  qrpc.Cmd
 		resp string
 	)
 	err = receiver.Receive(ctx, &cmd, &resp)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	if cmd != ChannelRespCmd || resp != msg1 {
 		t.Fatalf("cmd != ChannelRespCmd || resp!=msg1")
 	}
 	err = receiver.Receive(ctx, &cmd, &resp)
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	if cmd != ChannelRespCmd || resp != msg2 {
 		t.Fatalf("cmd != ChannelRespCmd || resp!=msg2")
 	}
 	err = sender.End()
-	if err != nil {
-		panic(err)
-	}
+	assert.Assert(t, err == nil)
+
 	err = receiver.Receive(ctx, &cmd, &resp)
 	if err != channel.ErrStreamFinished {
 		t.Fatalf("err != channel.ErrStreamFinished")

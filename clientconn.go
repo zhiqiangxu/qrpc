@@ -354,11 +354,14 @@ func (conn *Connection) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte
 		return 0, nil, nil, ErrConnAlreadyClosed
 	}
 
-	resp := &response{Frame: make(chan *Frame, 1)}
+	var resp Response
 	requestID := conn.nextRequestID()
 
 	writer := newFrameWriter(conn)
-	writer.resp = resp
+	if !flags.IsPush() {
+		writer.resp = &response{Frame: make(chan *Frame, 1)}
+		resp = writer.resp
+	}
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()

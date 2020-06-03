@@ -726,10 +726,14 @@ func (sc *serveconn) writeFirstFrame(cmd Cmd, flags FrameFlag, payload []byte) (
 	}
 
 	requestID := sc.nextRequestID()
-	resp := &response{Frame: make(chan *Frame, 1)}
 
+	var resp Response
 	writer := newFrameWriter(sc)
-	writer.resp = resp
+	if !flags.IsPush() {
+		writer.resp = &response{Frame: make(chan *Frame, 1)}
+		resp = writer.resp
+	}
+
 	writer.StartWrite(requestID, cmd, flags)
 	writer.WriteBytes(payload)
 	err := writer.EndWrite()
