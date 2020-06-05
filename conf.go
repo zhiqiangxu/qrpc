@@ -24,6 +24,9 @@ type ServerLifecycleCallbacks struct {
 	OnClose func(net.Conn)
 }
 
+// ServerSubFunc for server subscribe callback
+type ServerSubFunc func(*ConnectionInfo, *Frame)
+
 // ServerBinding contains binding infos
 type ServerBinding struct {
 	Addr                            string
@@ -41,6 +44,7 @@ type ServerBinding struct {
 	ListenFunc                      func(network, address string) (net.Listener, error)
 	Codec                           CompressorCodec
 	OverlayNetwork                  func(net.Listener, *tls.Config) Listener
+	SubFunc                         ServerSubFunc
 	OnKickCB                        func(w FrameWriter)
 	LatencyMetric                   metrics.Histogram
 	CounterMetric                   metrics.Counter
@@ -49,7 +53,7 @@ type ServerBinding struct {
 	ln                              Listener
 }
 
-// SubFunc for subscribe callback
+// SubFunc for client subscribe callback
 type SubFunc func(*Connection, *Frame)
 
 // ClientLifecycleCallbacks for Connection

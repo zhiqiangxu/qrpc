@@ -381,6 +381,14 @@ func (sc *serveconn) readFrames() (err error) {
 			}
 			return err
 		}
+		if req.Flags.IsPush() {
+			// pushed frame
+			if binding.SubFunc != nil {
+				binding.SubFunc(ci, req)
+			}
+
+			continue
+		}
 		if req.FromServer() {
 			ci.l.Lock()
 			if ci.respes != nil {

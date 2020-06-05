@@ -337,11 +337,11 @@ func startServer() {
 			panic(err)
 		}
 	})
-	handler.HandleFunc(PushCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
-		// noop
-	})
+	subFunc := func(ci *qrpc.ConnectionInfo, request *qrpc.Frame) {
+		fmt.Println("pushedmsg")
+	}
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
+		qrpc.ServerBinding{Addr: addr, Handler: handler, SubFunc: subFunc, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
 	server := qrpc.NewServer(bindings)
 	err := server.ListenAndServe()
 	if err != nil {
