@@ -1,16 +1,25 @@
 package test
 
 import (
+	"context"
 	"fmt"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/ws/client"
 	"github.com/zhiqiangxu/qrpc/ws/server"
+	"github.com/zhiqiangxu/util"
 )
 
 func TestWSOverlay(t *testing.T) {
-	go startServerForWSOverlay()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServerForWSOverlay(ctx)
+	})
+	time.Sleep(time.Millisecond * 300)
 
 	conf := qrpc.ConnectionConfig{}
 
@@ -31,9 +40,12 @@ func TestWSOverlay(t *testing.T) {
 		panic(err)
 	}
 	fmt.Println(string(frame.Payload))
+
+	cancelFunc()
+	wg.Wait()
 }
 
-func startServerForWSOverlay() {
+func startServerForWSOverlay(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
@@ -47,9 +59,9 @@ func startServerForWSOverlay() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := server.New(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		fmt.Println("ListenAndServe", err)
-		panic(err)
-	}
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
 }

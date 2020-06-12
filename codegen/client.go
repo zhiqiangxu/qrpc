@@ -7,6 +7,7 @@ import (
 
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/codegen/pb"
+	"github.com/zhiqiangxu/util"
 )
 
 // Client for auto rpc
@@ -60,7 +61,7 @@ func (client *Client) Request(ctx context.Context, ns, name string, inBytes []by
 			return
 		}
 		if frame.Cmd == client.errCmd {
-			err = errors.New(qrpc.String(frame.Payload))
+			err = errors.New(util.String(frame.Payload))
 			return
 		}
 

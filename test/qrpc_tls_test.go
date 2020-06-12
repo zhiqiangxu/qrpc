@@ -2,10 +2,12 @@ package test
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"log"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,10 +16,15 @@ import (
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/ws/client"
 	wsserver "github.com/zhiqiangxu/qrpc/ws/server"
+	"github.com/zhiqiangxu/util"
 )
 
 func TestTLS(t *testing.T) {
-	go startTLSServer()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startTLSServer(ctx)
+	})
 	time.Sleep(time.Second)
 	// 唯一的不同，是传入TLSConf
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{TLSConf: clientTLSConfig()}, nil)
@@ -33,10 +40,18 @@ func TestTLS(t *testing.T) {
 	if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 		panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
 	}
+
+	cancelFunc()
+	wg.Wait()
 }
 
 func TestWSTLS(t *testing.T) {
-	go startWSTLSServer()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startWSTLSServer(ctx)
+		log.Println("startWSTLSServer done")
+	})
 	time.Sleep(time.Second)
 	// 唯一的不同，是传入TLSConf
 	conn, err := client.NewConnection(addr, qrpc.ConnectionConfig{TLSConf: clientTLSConfig()}, nil)
@@ -52,6 +67,9 @@ func TestWSTLS(t *testing.T) {
 	if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
 		panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
 	}
+
+	cancelFunc()
+	wg.Wait()
 }
 
 func serverTLSConfig() *tls.Config {
@@ -104,7 +122,7 @@ func clientTLSConfig() *tls.Config {
 	return conf
 }
 
-func startTLSServer() {
+func startTLSServer(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
@@ -120,13 +138,14 @@ func startTLSServer() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		panic(err)
-	}
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
 }
 
-func startWSTLSServer() {
+func startWSTLSServer(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
@@ -142,8 +161,9 @@ func startWSTLSServer() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := wsserver.New(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		panic(err)
-	}
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		log.Println("WSTLSServer shutdown", server.Shutdown())
+	})
 }

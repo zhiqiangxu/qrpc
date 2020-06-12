@@ -57,7 +57,7 @@ start:
 			s.ResetByPeer()
 		}
 
-		return f, nil
+		goto start
 	}
 	s, loaded := cs.CreateOrGetStream(dfr.ctx, requestID, flags)
 	if !loaded {

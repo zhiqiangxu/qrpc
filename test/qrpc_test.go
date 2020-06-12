@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 	"github.com/zhiqiangxu/util"
 	"google.golang.org/grpc"
 	pb "google.golang.org/grpc/examples/helloworld/helloworld"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 const (
@@ -30,7 +31,12 @@ const (
 
 func TestNonStreamAndPushFlg(t *testing.T) {
 
-	go startServer()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServer(ctx)
+	})
+
 	time.Sleep(time.Millisecond * 500)
 
 	conf := qrpc.ConnectionConfig{}
@@ -55,11 +61,18 @@ func TestNonStreamAndPushFlg(t *testing.T) {
 		fmt.Println("resp is ", string(frame.Payload))
 	}
 
+	cancelFunc()
+	wg.Wait()
 }
 
 func TestCancel(t *testing.T) {
 
-	go startServerForCancel()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServerForCancel(ctx)
+	})
+
 	time.Sleep(time.Millisecond * 500)
 
 	conf := qrpc.ConnectionConfig{}
@@ -80,145 +93,142 @@ func TestCancel(t *testing.T) {
 	assert.Assert(t, err == nil)
 
 	fmt.Println("resp is ", string(frame.Payload))
-
+	cancelFunc()
+	wg.Wait()
 }
 
 func TestPerformance(t *testing.T) {
 
-	srv := &http.Server{Addr: "0.0.0.0:9999"}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "hello world xu\n")
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServer(ctx)
 	})
-	go func() {
-		err := srv.ListenAndServe()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	time.Sleep(time.Second)
-	go startServer()
 	time.Sleep(time.Second)
 	conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{WriteFrameChSize: 1000}, nil)
 	if err != nil {
 		panic(err)
 	}
 	i := 0
-	var wg sync.WaitGroup
-	startTime := time.Now()
-	for {
+	{
+		var wg sync.WaitGroup
+		startTime := time.Now()
+		for {
 
-		util.GoFunc(&wg, func() {
-			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-			if err != nil {
-				panic(err)
+			util.GoFunc(&wg, func() {
+				_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+				if err != nil {
+					panic(err)
+				}
+				frame, err := resp.GetFrame()
+				if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+					panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
+				}
+			})
+			i++
+			if i > n {
+				break
 			}
-			frame, err := resp.GetFrame()
-			if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
-				panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
-			}
-		})
-		i++
-		if i > n {
-			break
 		}
+		wg.Wait()
+		conn.Close()
+		endTime := time.Now()
+
+		t.Log(n, "request took", endTime.Sub(startTime))
 	}
+
+	cancelFunc()
 	wg.Wait()
-	conn.Close()
-	endTime := time.Now()
-
-	t.Log(n, "request took", endTime.Sub(startTime))
-
 }
 
 func TestAPI(t *testing.T) {
 
-	srv := &http.Server{Addr: "0.0.0.0:8888"}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "hello world xu\n")
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServer(ctx)
 	})
-	go func() {
-		err := srv.ListenAndServe()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	go startServer()
+	time.Sleep(time.Second)
 	api := qrpc.NewAPI([]string{addr}, qrpc.ConnectionConfig{}, nil)
 	i := 0
-	var wg sync.WaitGroup
-	startTime := time.Now()
-	for {
-		util.GoFunc(&wg, func() {
-			frame, err := api.Call(context.Background(), HelloCmd, []byte("xu"))
-			if err != nil {
-				panic(err)
+	{
+		var wg sync.WaitGroup
+		startTime := time.Now()
+		for {
+			util.GoFunc(&wg, func() {
+				frame, err := api.Call(context.Background(), HelloCmd, []byte("xu"))
+				if err != nil {
+					panic(err)
+				}
+				if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+					panic("fail")
+				}
+			})
+			i++
+			if i > n {
+				break
 			}
-			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
-				panic("fail")
-			}
-		})
-		i++
-		if i > n {
-			break
 		}
+
+		wg.Wait()
+		endTime := time.Now()
+		fmt.Println(n, "request took", endTime.Sub(startTime))
 	}
 
+	cancelFunc()
 	wg.Wait()
-	endTime := time.Now()
-	fmt.Println(n, "request took", endTime.Sub(startTime))
 }
 
 func TestPerformanceShort(t *testing.T) {
 
-	srv := &http.Server{Addr: "0.0.0.0:8888"}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, "hello world xu\n")
-	})
-	go func() {
-		err := srv.ListenAndServe()
-		if err != nil {
-			panic(err)
-		}
-	}()
-
-	go startServer()
-
-	time.Sleep(time.Second * 2)
-	i := 0
+	ctx, cancelFunc := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	startTime := time.Now()
+	util.GoFunc(&wg, func() {
+		startServer(ctx)
+	})
 
-	for {
-		util.GoFunc(&wg, func() {
-			conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
-			if err != nil {
-				panic(err)
-			}
-			defer conn.Close()
-			_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
-			if err != nil {
-				panic(err)
-			}
+	{
+		time.Sleep(time.Second * 1)
+		i := 0
+		var wg sync.WaitGroup
+		startTime := time.Now()
 
-			frame, err := resp.GetFrame()
-			if err != nil {
-				panic(err)
-			}
-			if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
-				panic("fail")
-			}
-		})
-		i++
-		if i > n {
-			break
+		sn := n / 100
+		if runtime.GOOS == "darwin" {
+			sn /= 10
 		}
-	}
-	wg.Wait()
-	endTime := time.Now()
-	fmt.Println(n, "request took", endTime.Sub(startTime))
+		for {
+			util.GoFunc(&wg, func() {
+				conn, err := qrpc.NewConnection(addr, qrpc.ConnectionConfig{}, nil)
+				if err != nil {
+					panic(err)
+				}
+				defer conn.Close()
+				_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+				if err != nil {
+					panic(err)
+				}
 
+				frame, err := resp.GetFrame()
+				if err != nil {
+					panic(err)
+				}
+				if !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+					panic("fail")
+				}
+			})
+			i++
+			if i > sn {
+				break
+			}
+		}
+		wg.Wait()
+		endTime := time.Now()
+		fmt.Println(sn, "request took", endTime.Sub(startTime))
+	}
+
+	cancelFunc()
+	wg.Wait()
 }
 
 func TestHTTPPerformance(t *testing.T) {
@@ -226,36 +236,53 @@ func TestHTTPPerformance(t *testing.T) {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "hello world xu")
 	})
-	go srv.ListenAndServe()
-	time.Sleep(time.Second * 2)
-	i := 0
-	var wg sync.WaitGroup
-	startTime := time.Now()
 
-	for {
-		resp, err := http.Get("http://" + addr)
-		if err != nil {
-			panic(err)
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		util.RunWithCancel(ctx, func() {
+			srv.ListenAndServe()
+		}, func() {
+			srv.Shutdown(context.Background())
+		})
+
+	})
+	time.Sleep(time.Second)
+
+	{
+		i := 0
+		var wg sync.WaitGroup
+		startTime := time.Now()
+
+		for {
+			resp, err := http.Get("http://" + addr)
+			if err != nil {
+				panic(err)
+			}
+			body, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				panic(err)
+			}
+			if !bytes.Equal(body, []byte("hello world xu")) {
+				panic("fail")
+			}
+			resp.Body.Close()
+			if err != nil {
+				panic(err)
+			}
+			if i > n {
+				break
+			}
+			i++
 		}
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			panic(err)
-		}
-		if !bytes.Equal(body, []byte("hello world xu")) {
-			panic("fail")
-		}
-		resp.Body.Close()
-		if err != nil {
-			panic(err)
-		}
-		if i > n {
-			break
-		}
-		i++
+		wg.Wait()
+		endTime := time.Now()
+		fmt.Println(n, "request took", endTime.Sub(startTime))
 	}
+
+	cancelFunc()
 	wg.Wait()
-	endTime := time.Now()
-	fmt.Println(n, "request took", endTime.Sub(startTime))
+
 }
 
 const grpcAddr = "localhost:50051"
@@ -325,7 +352,7 @@ const (
 	ChannelRespCmd
 )
 
-func startServer() {
+func startServer(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
@@ -342,11 +369,15 @@ func startServer() {
 	}
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler, SubFunc: subFunc, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
+
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		panic(err)
-	}
+
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
+
 }
 
 type service struct {
@@ -379,7 +410,7 @@ func (b *BaseResp) SetError(err error) {
 	b.Msg = err.Error()
 }
 
-func startServerForCancel() {
+func startServerForCancel(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
@@ -397,15 +428,21 @@ func startServerForCancel() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		fmt.Println("ListenAndServe", err)
-		panic(err)
-	}
+
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
+
 }
 
 func TestClientHandler(t *testing.T) {
-	go startServerForClientHandler()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServerForClientHandler(ctx)
+	})
 
 	time.Sleep(time.Second)
 
@@ -426,9 +463,12 @@ func TestClientHandler(t *testing.T) {
 	frame, err := resp.GetFrame()
 	assert.Assert(t, err == nil)
 	fmt.Println("resp is ", string(frame.Payload))
+
+	cancelFunc()
+	wg.Wait()
 }
 
-func startServerForClientHandler() {
+func startServerForClientHandler(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		_, resp, _ := request.ConnectionInfo().Request(ClientCmd, 0, nil)
@@ -441,16 +481,21 @@ func startServerForClientHandler() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		fmt.Println("ListenAndServe", err)
-		panic(err)
-	}
+
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
+
 }
 
 func TestChannelStyle(t *testing.T) {
-
-	go startServerForChannel()
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServerForChannel(ctx)
+	})
 
 	time.Sleep(time.Millisecond * 100)
 
@@ -461,7 +506,6 @@ func TestChannelStyle(t *testing.T) {
 	sender, receiver, err := transport.Pipe()
 	assert.Assert(t, err == nil)
 
-	ctx := context.Background()
 	msg1 := "hello channel1"
 	err = sender.Send(ctx, ChannelCmd, msg1, false)
 	assert.Assert(t, err == nil)
@@ -493,9 +537,12 @@ func TestChannelStyle(t *testing.T) {
 	if err != channel.ErrStreamFinished {
 		t.Fatalf("err != channel.ErrStreamFinished")
 	}
+
+	cancelFunc()
+	wg.Wait()
 }
 
-func startServerForChannel() {
+func startServerForChannel(ctx context.Context) {
 	mux := qrpc.NewServeMux()
 	mux.Handle(ChannelCmd, channel.NewQRPCHandler(channel.HandlerFunc(func(s channel.Sender, r channel.Receiver, t channel.Transport) {
 		var (
@@ -520,9 +567,11 @@ func startServerForChannel() {
 	bindings := []qrpc.ServerBinding{
 		qrpc.ServerBinding{Addr: addr, Handler: mux}}
 	server := qrpc.NewServer(bindings)
-	err := server.ListenAndServe()
-	if err != nil {
-		fmt.Println("ListenAndServe", err)
-		panic(err)
-	}
+
+	util.RunWithCancel(ctx, func() {
+		server.ListenAndServe()
+	}, func() {
+		server.Shutdown()
+	})
+
 }

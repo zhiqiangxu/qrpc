@@ -1,0 +1,13 @@
+language: go
+
+go_import_path: github.com/zhiqiangxu/qrpc
+
+os:
+  - linux
+  - osx
+
+go:
+  - 1.13.x
+
+script:
+    - bash ./.travis.gotest.sh
