@@ -70,25 +70,41 @@ type ConnectionInfo struct {
 	closed      bool
 	id          string
 	closeNotify []func()
-	anything    interface{} // caller is responsible for synchronize get/set
+	anything    interface{}
 	respes      map[uint64]*response
 }
 
-// GetAnything returns anything
+// GetAnything returns anything with no synchronization (caller guaranteed)
 func (ci *ConnectionInfo) GetAnything() interface{} {
 	return ci.anything
 }
 
-// SetAnything sets anything
+// GetAnythingSafe is synchronized version for GetAnything
+func (ci *ConnectionInfo) GetAnythingSafe() (r interface{}) {
+	ci.l.RLock()
+	r = ci.anything
+	ci.l.RUnlock()
+	return
+}
+
+// SetAnythingSafe is synchronized version for SetAnything
+func (ci *ConnectionInfo) SetAnythingSafe(anything interface{}) {
+	ci.l.Lock()
+	ci.anything = anything
+	ci.l.Unlock()
+}
+
+// SetAnything sets anything with no synchronization (caller guaranteed)
 func (ci *ConnectionInfo) SetAnything(anything interface{}) {
 	ci.anything = anything
 }
 
 // GetID returns the ID
-func (ci *ConnectionInfo) GetID() string {
+func (ci *ConnectionInfo) GetID() (id string) {
 	ci.l.RLock()
-	defer ci.l.RUnlock()
-	return ci.id
+	id = ci.id
+	ci.l.RUnlock()
+	return
 }
 
 // SetID sets id and kicks previous id if exists
