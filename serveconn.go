@@ -147,6 +147,16 @@ func (ci *ConnectionInfo) NotifyWhenClose(f func()) {
 	ci.l.Unlock()
 }
 
+// Begin a connetction lock
+func (ci *ConnectionInfo) Lock() {
+	ci.l.Lock()
+}
+
+// Release a connection lock
+func (ci *ConnectionInfo) UnLock() {
+	ci.l.Unlock()
+}
+
 // Server returns the server
 func (sc *serveconn) Server() *Server {
 	return sc.server
