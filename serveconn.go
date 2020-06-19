@@ -66,7 +66,7 @@ var ConnectionInfoKey = &contextKey{"qrpc-connection"}
 // ConnectionInfo for store info on connection
 type ConnectionInfo struct {
 	*serveconn
-	l           sync.RWMutex
+	sync.RWMutex
 	closed      bool
 	id          string
 	closeNotify []func()
@@ -79,21 +79,6 @@ func (ci *ConnectionInfo) GetAnything() interface{} {
 	return ci.anything
 }
 
-// GetAnythingSafe is synchronized version for GetAnything
-func (ci *ConnectionInfo) GetAnythingSafe() (r interface{}) {
-	ci.l.RLock()
-	r = ci.anything
-	ci.l.RUnlock()
-	return
-}
-
-// SetAnythingSafe is synchronized version for SetAnything
-func (ci *ConnectionInfo) SetAnythingSafe(anything interface{}) {
-	ci.l.Lock()
-	ci.anything = anything
-	ci.l.Unlock()
-}
-
 // SetAnything sets anything with no synchronization (caller guaranteed)
 func (ci *ConnectionInfo) SetAnything(anything interface{}) {
 	ci.anything = anything
@@ -101,9 +86,9 @@ func (ci *ConnectionInfo) SetAnything(anything interface{}) {
 
 // GetID returns the ID
 func (ci *ConnectionInfo) GetID() (id string) {
-	ci.l.RLock()
+	ci.RLock()
 	id = ci.id
-	ci.l.RUnlock()
+	ci.RUnlock()
 	return
 }
 
@@ -112,13 +97,13 @@ func (ci *ConnectionInfo) SetID(id string) (bool, uint64) {
 	if id == "" {
 		panic("empty id not allowed")
 	}
-	ci.l.Lock()
+	ci.Lock()
 	if ci.id != "" {
-		ci.l.Unlock()
+		ci.Unlock()
 		panic("SetID called twice")
 	}
 	ci.id = id
-	ci.l.Unlock()
+	ci.Unlock()
 
 	return ci.serveconn.server.bindID(ci.serveconn, id)
 }
@@ -135,26 +120,16 @@ func (ci *ConnectionInfo) ReaderConfig() ReaderConfig {
 
 // NotifyWhenClose ensures f is called when connection is closed
 func (ci *ConnectionInfo) NotifyWhenClose(f func()) {
-	ci.l.Lock()
+	ci.Lock()
 
 	if ci.closed {
-		ci.l.Unlock()
+		ci.Unlock()
 		f()
 		return
 	}
 
 	ci.closeNotify = append(ci.closeNotify, f)
-	ci.l.Unlock()
-}
-
-// Begin a connetction lock
-func (ci *ConnectionInfo) Lock() {
-	ci.l.Lock()
-}
-
-// Release a connection lock
-func (ci *ConnectionInfo) UnLock() {
-	ci.l.Unlock()
+	ci.Unlock()
 }
 
 // Server returns the server
@@ -416,13 +391,13 @@ func (sc *serveconn) readFrames() (err error) {
 			continue
 		}
 		if req.FromServer() {
-			ci.l.Lock()
+			ci.Lock()
 			if ci.respes != nil {
 				resp, ok := ci.respes[req.RequestID]
 				if ok {
 					delete(ci.respes, req.RequestID)
 				}
-				ci.l.Unlock()
+				ci.Unlock()
 				if ok {
 					if req.Flags.IsRst() {
 						resp.Close()
@@ -432,7 +407,7 @@ func (sc *serveconn) readFrames() (err error) {
 					continue
 				}
 			} else {
-				ci.l.Unlock()
+				ci.Unlock()
 			}
 		}
 
@@ -583,9 +558,9 @@ func (sc *serveconn) writeBuffers() error {
 	}
 	if len(targetIdx) > 0 {
 		ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-		ci.l.Lock()
+		ci.Lock()
 		if ci.closed {
-			ci.l.Unlock()
+			ci.Unlock()
 			for _, request := range sc.cachedRequests {
 				request.result <- ErrConnAlreadyClosed
 			}
@@ -606,7 +581,7 @@ func (sc *serveconn) writeBuffers() error {
 			ci.respes[requestID] = request.dfw.resp
 			request.dfw.resp = nil
 		}
-		ci.l.Unlock()
+		ci.Unlock()
 	}
 
 	var err error
@@ -799,9 +774,9 @@ func (sc *serveconn) closeUntracked() (err error) {
 	err = sc.rwc.Close()
 
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
-	ci.l.Lock()
+	ci.Lock()
 	if ci.closed {
-		ci.l.Unlock()
+		ci.Unlock()
 		return
 	}
 	ci.closed = true
@@ -809,7 +784,7 @@ func (sc *serveconn) closeUntracked() (err error) {
 	ci.closeNotify = nil
 	respes := ci.respes
 	ci.respes = nil
-	ci.l.Unlock()
+	ci.Unlock()
 
 	sc.cancelCtx()
 	for _, v := range respes {
