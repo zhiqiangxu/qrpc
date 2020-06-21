@@ -482,9 +482,6 @@ func (sc *serveconn) writeFrameBytes(dfw *defaultFrameWriter) (err error) {
 			select {
 			case <-sc.ctx.Done():
 				return sc.ctx.Err()
-			default:
-				// read has quit, ctx must have been canceled
-				panic("bug in qrpc inflight")
 			}
 		}
 
