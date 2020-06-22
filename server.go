@@ -112,12 +112,14 @@ func (mux *ServeMux) ServeQRPC(w FrameWriter, r *RequestFrame) {
 
 	mux.mu.RLock()
 	h, ok := mux.m[routingCmd]
+	mux.mu.RUnlock()
+
 	if !ok {
 		l.Error("cmd not registered", zap.Uint32("cmd", uint32(r.Cmd)))
 		r.Close()
 		return
 	}
-	mux.mu.RUnlock()
+
 	h.ServeQRPC(w, r)
 }
 
