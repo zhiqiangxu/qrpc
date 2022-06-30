@@ -136,7 +136,7 @@ func startTLSServer(ctx context.Context) {
 	})
 	// 唯一的不同，是传入TLSConf
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
+		{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := qrpc.NewServer(bindings)
 	util.RunWithCancel(ctx, func() {
 		server.ListenAndServe()
@@ -159,7 +159,7 @@ func startWSTLSServer(ctx context.Context) {
 	})
 	// 唯一的不同，是传入TLSConf
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
+		{Addr: addr, Handler: handler, TLSConf: serverTLSConfig()}}
 	server := wsserver.New(bindings)
 	util.RunWithCancel(ctx, func() {
 		server.ListenAndServe()

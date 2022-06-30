@@ -57,7 +57,7 @@ func startServerForWSOverlay(ctx context.Context) {
 		}
 	})
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+		{Addr: addr, Handler: handler}}
 	server := server.New(bindings)
 	util.RunWithCancel(ctx, func() {
 		server.ListenAndServe()

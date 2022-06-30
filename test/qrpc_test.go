@@ -368,7 +368,7 @@ func startServer(ctx context.Context) {
 		fmt.Println("pushedmsg")
 	}
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler, SubFunc: subFunc, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
+		{Addr: addr, Handler: handler, SubFunc: subFunc, ReadFrameChSize: 10000, WriteFrameChSize: 1000, WBufSize: 2000000, RBufSize: 2000000}}
 
 	server := qrpc.NewServer(bindings)
 
@@ -426,7 +426,7 @@ func startServerForCancel(ctx context.Context) {
 		}
 	})
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+		{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
 
 	util.RunWithCancel(ctx, func() {
@@ -479,7 +479,7 @@ func startServerForClientHandler(ctx context.Context) {
 		writer.EndWrite()
 	})
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: handler}}
+		{Addr: addr, Handler: handler}}
 	server := qrpc.NewServer(bindings)
 
 	util.RunWithCancel(ctx, func() {
@@ -565,7 +565,7 @@ func startServerForChannel(ctx context.Context) {
 
 	})))
 	bindings := []qrpc.ServerBinding{
-		qrpc.ServerBinding{Addr: addr, Handler: mux}}
+		{Addr: addr, Handler: mux}}
 	server := qrpc.NewServer(bindings)
 
 	util.RunWithCancel(ctx, func() {
