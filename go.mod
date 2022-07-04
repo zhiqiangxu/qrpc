@@ -9,6 +9,7 @@ require (
 	github.com/lucas-clemente/quic-go v0.28.0
 	github.com/oklog/run v1.0.0
 	github.com/urfave/cli/v2 v2.2.0
+	github.com/xtaci/kcp-go/v5 v5.6.1
 	github.com/zhiqiangxu/go-reuseport v0.2.1
 	github.com/zhiqiangxu/util v0.0.0-20220701050115-28679d0e8a73
 	go.uber.org/atomic v1.9.0 // indirect
