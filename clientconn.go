@@ -99,8 +99,8 @@ func (r *response) Close() {
 // NewConnection constructs a *Connection without reconnect ability
 func NewConnection(addr string, conf ConnectionConfig, f SubFunc) (conn *Connection, err error) {
 	var rwc net.Conn
-	if conf.OverlayNetwork != nil {
-		rwc, err = conf.OverlayNetwork(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize, TLSConf: conf.TLSConf})
+	if conf.DialFunc != nil {
+		rwc, err = conf.DialFunc(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize, TLSConf: conf.TLSConf})
 	} else {
 		rwc, err = dialTCP(addr, DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize, TLSConf: conf.TLSConf})
 	}
@@ -163,8 +163,8 @@ func NewConnectionWithReconnect(addrs []string, conf ConnectionConfig, f SubFunc
 		rwc net.Conn
 		err error
 	)
-	if conf.OverlayNetwork != nil {
-		rwc, err = conf.OverlayNetwork(copy[len(copy)-1], DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
+	if conf.DialFunc != nil {
+		rwc, err = conf.DialFunc(copy[len(copy)-1], DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	} else {
 		rwc, err = dialTCP(copy[len(copy)-1], DialConfig{DialTimeout: conf.DialTimeout, WBufSize: conf.WBufSize, RBufSize: conf.RBufSize})
 	}
@@ -272,8 +272,8 @@ func (conn *Connection) connect() error {
 			rwc net.Conn
 			err error
 		)
-		if conn.conf.OverlayNetwork != nil {
-			rwc, err = conn.conf.OverlayNetwork(addr, DialConfig{DialTimeout: conn.conf.DialTimeout, WBufSize: conn.conf.WBufSize, RBufSize: conn.conf.RBufSize})
+		if conn.conf.DialFunc != nil {
+			rwc, err = conn.conf.DialFunc(addr, DialConfig{DialTimeout: conn.conf.DialTimeout, WBufSize: conn.conf.WBufSize, RBufSize: conn.conf.RBufSize})
 		} else {
 			rwc, err = dialTCP(addr, DialConfig{DialTimeout: conn.conf.DialTimeout, WBufSize: conn.conf.WBufSize, RBufSize: conn.conf.RBufSize})
 		}

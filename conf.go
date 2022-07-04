@@ -71,7 +71,7 @@ type ConnectionConfig struct {
 	WBufSize           int // best effort only, check log for error
 	RBufSize           int // best effort only, check log for error
 	Handler            Handler
-	OverlayNetwork     func(address string, dialConfig DialConfig) (net.Conn, error)
+	DialFunc           func(address string, dialConfig DialConfig) (net.Conn, error)
 	Codec              CompressorCodec
 	TLSConf            *tls.Config
 	LifecycleCallbacks ClientLifecycleCallbacks
