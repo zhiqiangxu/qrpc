@@ -1,6 +1,7 @@
 package test
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"fmt"
@@ -66,14 +67,17 @@ func startServerForQuic(ctx context.Context) {
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
-		writer.WriteBytes(append([]byte("hello world for quic"), request.Payload...))
+		writer.WriteBytes(append([]byte("hello world "), request.Payload...))
 		err := writer.EndWrite()
 		if err != nil {
 			fmt.Println("EndWrite", err)
 		}
 	})
+	subFunc := func(ci *qrpc.ConnectionInfo, request *qrpc.Frame) {
+		fmt.Println("pushedmsg")
+	}
 	bindings := []qrpc.ServerBinding{
-		{Addr: quicAddr, Handler: handler, TLSConf: quicServerTLSConfig()}}
+		{Addr: quicAddr, Handler: handler, SubFunc: subFunc, TLSConf: quicServerTLSConfig()}}
 	server := server.New(bindings)
 	util.RunWithCancel(ctx, func() {
 		err := server.ListenAndServe()
@@ -83,4 +87,48 @@ func startServerForQuic(ctx context.Context) {
 	}, func() {
 		server.Shutdown()
 	})
+}
+
+func TestPerformanceQuic(t *testing.T) {
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServerForQuic(ctx)
+	})
+	time.Sleep(time.Second)
+	conn, err := client.NewConnection(quicAddr, qrpc.ConnectionConfig{WriteFrameChSize: 1000, TLSConf: quicClientTLSConfig()}, nil)
+	if err != nil {
+		panic(err)
+	}
+	i := 0
+	{
+		var wg sync.WaitGroup
+		startTime := time.Now()
+		for {
+
+			util.GoFunc(&wg, func() {
+				_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+				if err != nil {
+					panic(err)
+				}
+				frame, err := resp.GetFrame()
+				if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+					panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
+				}
+			})
+			i++
+			if i > n {
+				break
+			}
+		}
+		wg.Wait()
+		conn.Close()
+		endTime := time.Now()
+
+		t.Log(n, "request took", endTime.Sub(startTime))
+	}
+
+	cancelFunc()
+	wg.Wait()
 }

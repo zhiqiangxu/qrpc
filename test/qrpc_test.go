@@ -380,50 +380,19 @@ func startServer(ctx context.Context) {
 
 }
 
-type service struct {
-}
-
-func (s *service) Hello(ctx context.Context, str string) (r Result) {
-	r.Value = "hi " + str
-	return
-}
-
-type Result struct {
-	BaseResp
-	Value string
-}
-
-type BaseResp struct {
-	Err int
-	Msg string
-}
-
-func (b *BaseResp) OK() bool {
-	return b.Err == 0
-}
-
-func (b *BaseResp) SetError(err error) {
-	if err == nil {
-		return
-	}
-	b.Err = 1
-	b.Msg = err.Error()
-}
-
 func startServerForCancel(ctx context.Context) {
 	handler := qrpc.NewServeMux()
 	handler.HandleFunc(HelloCmd, func(writer qrpc.FrameWriter, request *qrpc.RequestFrame) {
 		// time.Sleep(time.Hour)
-		select {
-		case <-request.Context().Done():
-			writer.StartWrite(request.RequestID, HelloRespCmd, 0)
+		<-request.Context().Done()
+		writer.StartWrite(request.RequestID, HelloRespCmd, 0)
 
-			writer.WriteBytes(append([]byte("hello canceled "), request.Payload...))
-			err := writer.EndWrite()
-			if err != nil {
-				fmt.Println("EndWrite", err)
-			}
+		writer.WriteBytes(append([]byte("hello canceled "), request.Payload...))
+		err := writer.EndWrite()
+		if err != nil {
+			fmt.Println("EndWrite", err)
 		}
+
 	})
 	bindings := []qrpc.ServerBinding{
 		{Addr: addr, Handler: handler}}
@@ -551,8 +520,9 @@ func startServerForChannel(ctx context.Context) {
 		)
 		ctx := context.TODO()
 
+		var err error
 		for {
-			err := r.Receive(ctx, &cmd, &req)
+			err = r.Receive(ctx, &cmd, &req)
 			if err != nil {
 				if err != channel.ErrStreamFinished {
 					panic(fmt.Sprintf("Receive:%v", err))
@@ -562,7 +532,7 @@ func startServerForChannel(ctx context.Context) {
 			}
 			s.Send(ctx, ChannelRespCmd, req, false)
 		}
-
+		fmt.Println("err", err)
 	})))
 	bindings := []qrpc.ServerBinding{
 		{Addr: addr, Handler: mux}}
