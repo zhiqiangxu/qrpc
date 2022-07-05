@@ -99,7 +99,7 @@ func (mux *ServeMux) Handle(cmd Cmd, handler Handler, middleware ...MiddlewareFu
 		mux.m = make(map[Cmd]Handler)
 	}
 	if _, exist := mux.m[cmd]; exist {
-		panic("qrpc: multiple registrations for " + string(cmd))
+		panic(fmt.Sprintf("qrpc: multiple registrations for cmd %d", cmd))
 	}
 
 	mux.m[cmd.Routing()] = HandlerWithMW(handler, middleware...)
