@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	addr = "0.0.0.0:8001"
+	addr = "localhost:8001"
 	n    = 100000
 )
 
