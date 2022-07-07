@@ -29,6 +29,43 @@ const (
 	n    = 100000
 )
 
+func TestTCPLatency(t *testing.T) {
+
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	util.GoFunc(&wg, func() {
+		startServer(ctx)
+	})
+
+	time.Sleep(time.Millisecond * 500)
+
+	conf := qrpc.ConnectionConfig{}
+
+	conn, err := qrpc.NewConnection(addr, conf, func(conn *qrpc.Connection, frame *qrpc.Frame) {
+		fmt.Println(frame)
+	})
+	assert.Assert(t, err == nil)
+
+	payload := bytes.Repeat([]byte("xu"), 200)
+	for i := 0; i < 7; i++ {
+		start := time.Now()
+		_, resp, err := conn.Request(HelloCmd, 0, payload)
+
+		assert.Assert(t, err == nil)
+
+		_, err = resp.GetFrame()
+
+		fmt.Println("single request took", time.Since(start), "startts", start.Second(), start.Nanosecond())
+
+		assert.Assert(t, err == nil)
+
+		fmt.Println("-----------")
+	}
+
+	cancelFunc()
+	wg.Wait()
+}
+
 func TestNonStreamAndPushFlg(t *testing.T) {
 
 	ctx, cancelFunc := context.WithCancel(context.Background())
@@ -47,11 +84,14 @@ func TestNonStreamAndPushFlg(t *testing.T) {
 	assert.Assert(t, err == nil)
 
 	for _, flag := range []qrpc.FrameFlag{0, qrpc.NBFlag} {
+		start := time.Now()
 		_, resp, err := conn.Request(HelloCmd, flag, []byte("xu"))
 
 		assert.Assert(t, err == nil)
 
 		frame, err := resp.GetFrame()
+
+		fmt.Println("single request took", time.Since(start), "startts", start.Second(), start.Nanosecond())
 
 		assert.Assert(t, err == nil)
 
@@ -110,18 +150,20 @@ func TestPerformance(t *testing.T) {
 		panic(err)
 	}
 	i := 0
+	payload := bytes.Repeat([]byte("xu"), 200)
+	expected := append([]byte("hello world "), payload...)
 	{
 		var wg sync.WaitGroup
 		startTime := time.Now()
 		for {
 
 			util.GoFunc(&wg, func() {
-				_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, []byte("xu"))
+				_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, payload)
 				if err != nil {
 					panic(err)
 				}
 				frame, err := resp.GetFrame()
-				if err != nil || !bytes.Equal(frame.Payload, []byte("hello world xu")) {
+				if err != nil || !bytes.Equal(frame.Payload, expected) {
 					panic(fmt.Sprintf("fail payload:%s len:%v cmd:%v flags:%v err:%v", string(frame.Payload), len(frame.Payload), frame.Cmd, frame.Flags, err))
 				}
 			})
