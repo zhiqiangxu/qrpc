@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"net"
+	"time"
 	"unsafe"
 
 	"go.uber.org/zap"
@@ -83,7 +85,9 @@ const (
 func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	header := dfr.rbuf[:]
+	start := time.Now()
 	err := dfr.ReadBytes(header)
+	fmt.Println("ReadBytes took", time.Since(start), "startts", start.Second(), start.Nanosecond(), "err", err)
 	if err != nil {
 		return nil, err
 	}

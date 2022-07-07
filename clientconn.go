@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	mathrand "math/rand"
 	"net"
 	"runtime"
@@ -743,7 +744,10 @@ func (conn *Connection) writeBuffers() error {
 	conn.mu.Unlock()
 
 	cachedBuffs := conn.cachedBuffs
+	start := time.Now()
+	count := len(conn.cachedBuffs)
 	_, err := conn.loopBytesWriter.writeBuffers(&conn.cachedBuffs)
+	fmt.Println("client writeBuffers took", time.Since(start), "#cachedBuffs", count, "startts", start.Second(), start.Nanosecond())
 	conn.cachedBuffs = cachedBuffs
 	if err != nil {
 		l.Error("Connection.writeBuffers", zap.Uintptr("conn", uintptr(unsafe.Pointer(conn))), zap.Error(err))

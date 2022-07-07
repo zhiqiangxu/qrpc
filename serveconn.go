@@ -584,7 +584,10 @@ func (sc *serveconn) writeBuffers() error {
 	var err error
 	{
 		cachedBuffs := sc.cachedBuffs
+		start := time.Now()
+		count := len(sc.cachedBuffs)
 		_, err = sc.bytesWriter.writeBuffers(&sc.cachedBuffs)
+		fmt.Println("server writeBuffers took", time.Since(start), "#cachedBuffs", count, "startts", start.Second(), start.Nanosecond())
 		sc.cachedBuffs = cachedBuffs
 	}
 
