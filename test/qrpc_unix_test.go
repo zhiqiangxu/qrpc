@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"runtime/trace"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/petermattis/goid"
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/unix/client"
 	"github.com/zhiqiangxu/qrpc/unix/server"
@@ -19,6 +22,7 @@ const unixAddr = "/tmp/testunix.sock"
 
 func TestUnixLatency(t *testing.T) {
 
+	os.Remove(unixAddr)
 	ctx, cancelFunc := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	util.GoFunc(&wg, func() {
@@ -33,8 +37,17 @@ func TestUnixLatency(t *testing.T) {
 	})
 	assert.Assert(t, err == nil)
 
+	fmt.Println("|TestUnixLatency goid|", goid.Get())
+
 	payload := bytes.Repeat([]byte("xu"), 200)
-	for i := 0; i < 7; i++ {
+	starttrace := time.Now()
+	f, err := os.Create(time.Now().Format("unix.out"))
+	if err != nil {
+		panic(err)
+	}
+	trace.Start(f)
+
+	for i := 0; i < 1; i++ {
 		start := time.Now()
 		_, resp, err := conn.Request(HelloCmd, 0, payload)
 
@@ -46,6 +59,9 @@ func TestUnixLatency(t *testing.T) {
 
 		fmt.Println("-------------")
 	}
+
+	fmt.Println("time after trace", time.Since(starttrace))
+	trace.Stop()
 
 	cancelFunc()
 	wg.Wait()

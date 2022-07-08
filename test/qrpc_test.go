@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"sync"
 	"testing"
@@ -16,6 +17,9 @@ import (
 
 	_ "net/http/pprof"
 
+	"runtime/trace"
+
+	"github.com/petermattis/goid"
 	"github.com/zhiqiangxu/qrpc"
 	"github.com/zhiqiangxu/qrpc/channel"
 	"github.com/zhiqiangxu/util"
@@ -46,8 +50,17 @@ func TestTCPLatency(t *testing.T) {
 	})
 	assert.Assert(t, err == nil)
 
+	fmt.Println("|TestTCPLatency goid|", goid.Get())
 	payload := bytes.Repeat([]byte("xu"), 200)
-	for i := 0; i < 7; i++ {
+
+	starttrace := time.Now()
+	f, err := os.Create(time.Now().Format("tcp.out"))
+	if err != nil {
+		panic(err)
+	}
+	trace.Start(f)
+
+	for i := 0; i < 1; i++ {
 		start := time.Now()
 		_, resp, err := conn.Request(HelloCmd, 0, payload)
 
@@ -61,6 +74,9 @@ func TestTCPLatency(t *testing.T) {
 
 		fmt.Println("-----------")
 	}
+
+	fmt.Println("time after trace", time.Since(starttrace))
+	trace.Stop()
 
 	cancelFunc()
 	wg.Wait()

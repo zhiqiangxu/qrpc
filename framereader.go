@@ -87,7 +87,7 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 	header := dfr.rbuf[:]
 	start := time.Now()
 	err := dfr.ReadBytes(header)
-	fmt.Println("ReadBytes took", time.Since(start), "startts", start.Second(), start.Nanosecond(), "err", err)
+	fmt.Println("read header took", time.Since(start), "startts", start.Second(), start.Nanosecond(), "err", err)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +111,9 @@ func (dfr *defaultFrameReader) readFrame() (*Frame, error) {
 
 	if size > 12 {
 		payload := make([]byte, size-12)
+		start = time.Now()
 		err = dfr.ReadBytesWithMaxTimeout(payload, payloadReadMaxTimeoutSecond)
+		fmt.Println("read payload took", time.Since(start), "startts", start.Second(), start.Nanosecond(), "err", err)
 		if err != nil {
 			return nil, err
 		}

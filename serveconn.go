@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/petermattis/goid"
 	"github.com/zhiqiangxu/util"
 	"go.uber.org/zap"
 )
@@ -211,6 +212,7 @@ func (sc *serveconn) serve() {
 					}
 				}
 				util.GoFunc(&sc.wg, func() {
+					fmt.Println("|serveconn.ServeQRPC goid|", goid.Get())
 					defer sc.handleRequestPanic(res.f, time.Now(), inflightStreamsPtr)
 
 					w := newFrameWriter(sc)
@@ -320,6 +322,8 @@ const (
 func (g gate) Done() { g <- struct{}{} }
 
 func (sc *serveconn) readFrames() (err error) {
+
+	fmt.Println("|serveconn.readFrames goid|", goid.Get())
 
 	ci := sc.ctx.Value(ConnectionInfoKey).(*ConnectionInfo)
 

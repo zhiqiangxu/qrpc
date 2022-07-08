@@ -13,6 +13,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/petermattis/goid"
 	"github.com/zhiqiangxu/util"
 	"go.uber.org/zap"
 )
@@ -212,6 +213,7 @@ func newConnection(rwc net.Conn, addr []string, conf ConnectionConfig, f SubFunc
 }
 
 func (conn *Connection) loop() {
+	fmt.Println("|Connection.loop goid|", goid.Get())
 	for {
 		if err := conn.connect(); err != nil {
 			// connx.Close() was called
@@ -477,6 +479,8 @@ func (conn *Connection) IsClosed() bool {
 
 func (conn *Connection) readFrames() {
 
+	fmt.Println("|Connection.readFrames goid|", goid.Get())
+
 	defer conn.loopCancelCtx()
 
 	// in case closeRWC is already called
@@ -522,6 +526,7 @@ func (conn *Connection) readFrames() {
 					return
 				}
 				util.GoFunc(conn.loopWG, func() {
+					fmt.Println("|Connection.ServeQRPC goid|", goid.Get())
 					defer conn.handleRequestPanic((*RequestFrame)(frame), time.Now())
 					w := conn.getWriter()
 					conn.conf.Handler.ServeQRPC(w, (*RequestFrame)(frame))
@@ -573,6 +578,8 @@ func (conn *Connection) getWriter() *defaultFrameWriter {
 }
 
 func (conn *Connection) writeFrames() (err error) {
+
+	fmt.Println("|Connection.writeFrames goid|", goid.Get())
 
 	defer conn.loopCancelCtx()
 

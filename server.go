@@ -12,6 +12,7 @@ import (
 	"unsafe"
 
 	"github.com/oklog/run"
+	"github.com/petermattis/goid"
 	"github.com/zhiqiangxu/util"
 	"go.uber.org/ratelimit"
 	"go.uber.org/zap"
@@ -332,6 +333,7 @@ func (srv *Server) Serve(ln Listener, idx int) error {
 		}
 
 		util.GoFunc(&srv.wg, func() {
+			fmt.Println("|serve goid|", goid.Get())
 			c := srv.newConn(serveCtx, rw, idx)
 			c.serve()
 		})
