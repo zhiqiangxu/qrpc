@@ -62,7 +62,7 @@ func TestTCPLatency(t *testing.T) {
 
 	for i := 0; i < 1; i++ {
 		start := time.Now()
-		_, resp, err := conn.Request(HelloCmd, 0, payload)
+		_, resp, err := conn.Request(HelloCmd, qrpc.NBFlag, payload)
 
 		assert.Assert(t, err == nil)
 
